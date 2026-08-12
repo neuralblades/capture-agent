@@ -5,9 +5,11 @@
 
 const MESSAGE_TYPES = Object.freeze({
   CAPTURE_TWEET: 'CAPTURE_TWEET',
+  GENERATE_FORM_ANSWER: 'GENERATE_FORM_ANSWER',
 });
 
 const CAPTURE_ENDPOINT = 'http://localhost:8000/capture';
+const FORM_ANSWER_ENDPOINT = 'http://localhost:8000/generate-form-answer';
 
 // Runs every time the (non-persistent) service worker starts up. The setting
 // itself persists across restarts once made, but re-asserting it on every
@@ -46,19 +48,71 @@ async function capturePost(message) {
   return response.json();
 }
 
+/**
+ * @param {Record<string, unknown>} profile - camelCase profile from chrome.storage.local
+ * @returns {Record<string, unknown>} snake_case profile matching the backend's ProfileContext
+ */
+function toBackendProfile(profile) {
+  return {
+    full_name: profile.fullName ?? null,
+    email: profile.email ?? null,
+    phone: profile.phone ?? null,
+    linkedin_url: profile.linkedinUrl ?? null,
+    github_url: profile.githubUrl ?? null,
+    resume_text: profile.resumeText ?? null,
+  };
+}
+
+/**
+ * @param {{ question: string, profile?: Record<string, unknown> }} message
+ * @returns {Promise<string>}
+ */
+async function generateFormAnswer(message) {
+  const response = await fetch(FORM_ANSWER_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      question: message.question,
+      profile: toBackendProfile(message.profile || {}),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Form answer request failed with status ${response.status}`);
+  }
+
+  const { answer } = await response.json();
+  return answer;
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (!message || message.type !== MESSAGE_TYPES.CAPTURE_TWEET) {
+  if (!message) {
     return false;
   }
 
-  capturePost(message)
-    .then((post) => sendResponse({ ok: true, post }))
-    .catch((error) => {
-      console.error('[CaptureAgent] Capture failed', error);
-      sendResponse({ ok: false, error: error.message });
-    });
+  if (message.type === MESSAGE_TYPES.CAPTURE_TWEET) {
+    capturePost(message)
+      .then((post) => sendResponse({ ok: true, post }))
+      .catch((error) => {
+        console.error('[CaptureAgent] Capture failed', error);
+        sendResponse({ ok: false, error: error.message });
+      });
 
-  // Keep the message channel open: capturePost() resolves/rejects
-  // asynchronously, and sendResponse() above runs after this listener returns.
-  return true;
+    // Keep the message channel open: capturePost() resolves/rejects
+    // asynchronously, and sendResponse() above runs after this listener returns.
+    return true;
+  }
+
+  if (message.type === MESSAGE_TYPES.GENERATE_FORM_ANSWER) {
+    generateFormAnswer(message)
+      .then((answer) => sendResponse({ ok: true, answer }))
+      .catch((error) => {
+        console.error('[CaptureAgent] Form answer generation failed', error);
+        sendResponse({ ok: false, error: error.message });
+      });
+
+    return true;
+  }
+
+  return false;
 });

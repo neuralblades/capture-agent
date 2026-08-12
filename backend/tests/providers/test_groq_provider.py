@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from models import ExtractionResult
+from models import ExtractionResult, ProfileContext
 from providers.groq_provider import GroqProvider
 
 
@@ -78,6 +78,42 @@ def test_extract_raises_when_json_does_not_match_schema():
     with patch.object(provider, "get_client", return_value=fake_client):
         with pytest.raises(ValueError, match="parseable"):
             provider.extract("some content", "2026-08-12")
+
+
+def test_generate_form_answer_returns_text_and_includes_profile():
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(content="I'd love to join because...")
+    provider = GroqProvider()
+    profile = ProfileContext(full_name="Jane Doe", email="jane@example.com")
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        answer = provider.generate_form_answer("Why do you want to join?", profile)
+
+    assert answer == "I'd love to join because..."
+    _, kwargs = fake_client.chat.completions.create.call_args
+    assert kwargs["model"] == "llama-3.3-70b-versatile"
+    assert "Jane Doe" in kwargs["messages"][0]["content"]
+    assert kwargs["messages"][1]["content"] == "Why do you want to join?"
+
+
+def test_generate_form_answer_raises_on_content_filter():
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(finish_reason="content_filter")
+    provider = GroqProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        with pytest.raises(ValueError, match="declined"):
+            provider.generate_form_answer("Why?", ProfileContext())
+
+
+def test_generate_form_answer_raises_when_content_missing():
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(content=None)
+    provider = GroqProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        with pytest.raises(ValueError, match="did not return"):
+            provider.generate_form_answer("Why?", ProfileContext())
 
 
 def test_get_client_is_lazily_constructed_and_cached(monkeypatch):

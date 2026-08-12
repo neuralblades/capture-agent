@@ -16,8 +16,15 @@ from fastapi.middleware.cors import CORSMiddleware
 import database
 from contact_extractor import find_contact_email
 from email_generator import generate_cold_email
-from llm_processor import extract_post_data
-from models import CapturedPost, GenerateEmailRequest, GeneratedEmail, PostRecord
+from llm_processor import extract_post_data, generate_form_answer
+from models import (
+    CapturedPost,
+    FormAnswerRequest,
+    FormAnswerResponse,
+    GenerateEmailRequest,
+    GeneratedEmail,
+    PostRecord,
+)
 
 
 @asynccontextmanager
@@ -75,6 +82,16 @@ def capture_post(post: CapturedPost) -> PostRecord:
     if record is None:
         raise HTTPException(status_code=500, detail="Post was saved but could not be re-read")
     return PostRecord(**record)
+
+
+@app.post("/generate-form-answer", response_model=FormAnswerResponse)
+def generate_form_answer_route(request: FormAnswerRequest) -> FormAnswerResponse:
+    try:
+        answer = generate_form_answer(request.question, request.profile)
+    except Exception as exc:  # noqa: BLE001 - surface LLM/API failures as a 502, not a 500
+        raise HTTPException(status_code=502, detail=f"Answer generation failed: {exc}") from exc
+
+    return FormAnswerResponse(answer=answer)
 
 
 @app.get("/posts", response_model=list[PostRecord])

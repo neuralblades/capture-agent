@@ -38,6 +38,33 @@ class ExtractionResult(BaseModel):
     action_required: bool = Field(..., description="Whether the post implies an action the user must take")
 
 
+class ProfileContext(BaseModel):
+    """Applicant profile stored in the extension (chrome.storage.local) and sent
+    along with a form-answer request to tailor the generated response."""
+
+    full_name: Optional[str] = Field(None, description="Applicant's full name")
+    email: Optional[str] = Field(None, description="Applicant's email address")
+    phone: Optional[str] = Field(None, description="Applicant's phone number")
+    linkedin_url: Optional[str] = Field(None, description="Applicant's LinkedIn profile URL")
+    github_url: Optional[str] = Field(None, description="Applicant's GitHub profile URL")
+    resume_text: Optional[str] = Field(None, description="Plain-text resume/CV content")
+
+
+class FormAnswerRequest(BaseModel):
+    """An open-ended form question to be answered on the applicant's behalf."""
+
+    question: str = Field(..., description="The form question or field label text")
+    profile: ProfileContext = Field(
+        default_factory=ProfileContext, description="Applicant profile used to tailor the answer"
+    )
+
+
+class FormAnswerResponse(BaseModel):
+    """A generated answer for an open-ended form question."""
+
+    answer: str = Field(..., description="Tailored answer text to inject into the form field")
+
+
 class PostRecord(BaseModel):
     """A stored post, including its LLM-derived extraction."""
 

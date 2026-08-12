@@ -7,8 +7,8 @@ import os
 from groq import Groq
 from pydantic import ValidationError
 
-from models import ExtractionResult
-from providers.base import SYSTEM_PROMPT, LLMProvider
+from models import ExtractionResult, ProfileContext
+from providers.base import FORM_ANSWER_SYSTEM_PROMPT, SYSTEM_PROMPT, format_profile, LLMProvider
 
 MODEL = "llama-3.3-70b-versatile"
 
@@ -61,3 +61,24 @@ class GroqProvider(LLMProvider):
             return ExtractionResult.model_validate(json.loads(raw))
         except (json.JSONDecodeError, ValidationError) as exc:
             raise ValueError("Groq did not return a parseable extraction result") from exc
+
+    def generate_form_answer(self, question: str, profile: ProfileContext) -> str:
+        system_prompt = FORM_ANSWER_SYSTEM_PROMPT.format(profile=format_profile(profile))
+
+        response = self.get_client().chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question},
+            ],
+        )
+
+        choice = response.choices[0]
+        if choice.finish_reason == "content_filter":
+            raise ValueError("Groq declined to answer this question")
+
+        answer = choice.message.content
+        if not answer or not answer.strip():
+            raise ValueError("Groq did not return an answer")
+
+        return answer.strip()

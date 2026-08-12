@@ -5,8 +5,8 @@ import os
 
 import anthropic
 
-from models import ExtractionResult
-from providers.base import SYSTEM_PROMPT, LLMProvider
+from models import ExtractionResult, ProfileContext
+from providers.base import FORM_ANSWER_SYSTEM_PROMPT, SYSTEM_PROMPT, format_profile, LLMProvider
 
 MODEL = "claude-opus-5"
 
@@ -38,3 +38,20 @@ class AnthropicProvider(LLMProvider):
             raise ValueError("Claude did not return a parseable extraction result")
 
         return response.parsed_output
+
+    def generate_form_answer(self, question: str, profile: ProfileContext) -> str:
+        response = self.get_client().messages.create(
+            model=MODEL,
+            max_tokens=512,
+            system=FORM_ANSWER_SYSTEM_PROMPT.format(profile=format_profile(profile)),
+            messages=[{"role": "user", "content": question}],
+        )
+
+        if response.stop_reason == "refusal":
+            raise ValueError("Claude declined to answer this question")
+
+        answer = "".join(block.text for block in response.content if block.type == "text").strip()
+        if not answer:
+            raise ValueError("Claude did not return an answer")
+
+        return answer
