@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Capture Agent</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="search-wrap">
+          <svg class="search-icon" viewBox="0 0 20 20" width="14" height="14" aria-hidden="true">
+            <path
+              d="M13.6 12.2a6 6 0 1 0-1.4 1.4l3.9 3.9 1.4-1.4-3.9-3.9ZM8 12.5A4.5 4.5 0 1 1 8 3.5a4.5 4.5 0 0 1 0 9Z"
+              fill="currentColor"
+            />
+          </svg>
+          <input
+            id="search-input"
+            class="search-input"
+            type="text"
+            placeholder="Search captures…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+      </header>
+
+      <nav id="tabs" class="tabs" role="tablist" aria-label="Capture categories"></nav>
+
+      <main id="list" class="list" role="tabpanel" aria-live="polite"></main>
+
+      <div id="empty-state" class="empty-state" hidden>
+        <p class="empty-title">Nothing here yet</p>
+        <p class="empty-sub">Captures from X.com will show up in this panel.</p>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="assertive" hidden></div>
+
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>
