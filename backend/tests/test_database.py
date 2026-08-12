@@ -45,6 +45,16 @@ def test_get_missing_post_returns_none(isolated_db):
     assert database.get_post(12345) is None
 
 
+def test_contact_email_defaults_to_none(isolated_db):
+    post_id = _insert()
+    assert database.get_post(post_id)["contact_email"] is None
+
+
+def test_contact_email_round_trips(isolated_db):
+    post_id = _insert(contact_email="jane@example.com")
+    assert database.get_post(post_id)["contact_email"] == "jane@example.com"
+
+
 def test_list_posts_orders_newest_first(isolated_db):
     for i in range(3):
         _insert(content=f"post {i}")

@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class CapturedPost(BaseModel):
@@ -51,4 +51,28 @@ class PostRecord(BaseModel):
     tags: list[str]
     action_required: bool
     deadlines: list[Deadline]
+    contact_email: Optional[str] = None
     created_at: str
+
+
+class GenerateEmailRequest(BaseModel):
+    """Request to draft a cold outreach email for a captured post."""
+
+    post_id: Optional[int] = Field(None, description="Id of a previously captured post to use as context")
+    content: Optional[str] = Field(None, description="Raw post content to use as context, if post_id is omitted")
+    recipient_email: str = Field(..., description="Email address the draft will be addressed to")
+    sender_name: Optional[str] = Field(None, description="Name the email should be signed with")
+    sender_company: Optional[str] = Field(None, description="Company the sender represents, if any")
+
+    @model_validator(mode="after")
+    def _require_post_id_or_content(self) -> "GenerateEmailRequest":
+        if not self.post_id and not self.content:
+            raise ValueError("Either post_id or content must be provided")
+        return self
+
+
+class GeneratedEmail(BaseModel):
+    """A drafted cold outreach email, ready to hand off to a mail client."""
+
+    subject: str = Field(..., description="Drafted email subject line")
+    body: str = Field(..., description="Drafted email body")

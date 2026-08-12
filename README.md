@@ -57,16 +57,18 @@ Content script injected into `x.com` / `twitter.com` tweet pages.
 ### `extension/sidepanel/` — Dashboard UI
 The extension's side panel, where captured items are triaged.
 - `sidepanel.html` / `sidepanel.css` — panel markup and styling.
-- `sidepanel.js` — renders tabbed, searchable item cards from `GET_ITEMS`, dispatches `RUN_ACTION` requests, and listens for `ITEMS_UPDATED` pushes. Falls back to sample data when run outside an extension runtime (e.g. previewing the HTML directly).
+- `sidepanel.js` — renders tabbed, searchable item cards from `GET_ITEMS`, dispatches `RUN_ACTION` requests, and listens for `ITEMS_UPDATED` pushes. Cards with a detected contact email get a "Draft Email" action that calls the backend's `POST /generate-email` directly and opens a pre-filled Gmail compose tab via `chrome.tabs.create()`. Falls back to sample data when run outside an extension runtime (e.g. previewing the HTML directly).
 - `contracts.js` — the typed JSON contracts (`CapturedItem`, message types, action types) other modules import to stay in sync without hand-typing string literals.
 
 ### `backend/` — AI Backend
 FastAPI service that turns raw captured text into structured, actionable data.
-- `main.py` — `POST /capture` (extract + persist), `GET /posts`, `GET /posts/{id}`, `GET /health`. CORS is restricted to `chrome-extension://` origins by regex, since `/capture` is unauthenticated and triggers a paid LLM call.
+- `main.py` — `POST /capture` (extract + persist), `GET /posts`, `GET /posts/{id}`, `POST /generate-email`, `GET /health`. CORS is restricted to `chrome-extension://` origins by regex, since `/capture` and `/generate-email` are unauthenticated and trigger paid LLM calls.
 - `llm_processor.py` — resolves a reference date and delegates extraction to the configured provider.
 - `providers/` — adapter pattern over LLM backends (`base.py` defines the `LLMProvider` interface and shared system prompt; `anthropic_provider.py` and `groq_provider.py` implement it). Selected at runtime via the `LLM_PROVIDER` env var and cached per-process.
-- `models.py` — Pydantic contracts (`CapturedPost`, `ExtractionResult`, `Deadline`, `PostRecord`) shared with the extension's JSON shape.
-- `database.py` — SQLite persistence (`capture_agent.db`), one `posts` row per captured item with JSON-encoded `tags`/`deadlines`.
+- `contact_extractor.py` — regex-based contact email detection run on captured post content, independent of the LLM providers.
+- `email_generator.py` — drafts a cold outreach email (subject + body) for `POST /generate-email` via Groq's Llama 3.3 70B, given post context and an optional sender name/company.
+- `models.py` — Pydantic contracts (`CapturedPost`, `ExtractionResult`, `Deadline`, `PostRecord`, `GenerateEmailRequest`, `GeneratedEmail`) shared with the extension's JSON shape.
+- `database.py` — SQLite persistence (`capture_agent.db`), one `posts` row per captured item with JSON-encoded `tags`/`deadlines` and a detected `contact_email`.
 - `tests/` — pytest suite (provider adapters, extraction, DB, API), run in CI via `.github/workflows/backend-tests.yml`.
 
 ### `extension/actions/` — JARVIS Actions

@@ -1,7 +1,7 @@
 from datetime import datetime
 from unittest.mock import patch
 
-from models import Deadline, ExtractionResult
+from models import Deadline, ExtractionResult, GeneratedEmail
 
 FAKE_RESULT = ExtractionResult(
     summary="Team asks for feedback on the new design by Friday.",
@@ -81,3 +81,82 @@ def test_list_and_get_posts_round_trip(client):
 def test_get_missing_post_returns_404(client):
     resp = client.get("/posts/999")
     assert resp.status_code == 404
+
+
+def test_capture_detects_contact_email_in_content(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        resp = client.post(
+            "/capture",
+            json={
+                "platform": "linkedin",
+                "content": "Reach out to jane@example.com if you're interested.",
+            },
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["contact_email"] == "jane@example.com"
+
+
+def test_capture_contact_email_is_null_when_absent(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        resp = client.post("/capture", json={"platform": "linkedin", "content": "No email here."})
+
+    assert resp.status_code == 200
+    assert resp.json()["contact_email"] is None
+
+
+FAKE_EMAIL = GeneratedEmail(subject="Loved your post", body="Hi Jane, ...")
+
+
+def test_generate_email_from_post_id(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        create_resp = client.post(
+            "/capture",
+            json={"platform": "linkedin", "content": "We're hiring a designer, email jane@example.com"},
+        )
+    post_id = create_resp.json()["id"]
+
+    with patch("main.generate_cold_email", return_value=FAKE_EMAIL) as mock_generate:
+        resp = client.post(
+            "/generate-email",
+            json={"post_id": post_id, "recipient_email": "jane@example.com"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"subject": "Loved your post", "body": "Hi Jane, ..."}
+    _, kwargs = mock_generate.call_args
+    assert "hiring a designer" in kwargs["content"]
+    assert kwargs["recipient_email"] == "jane@example.com"
+
+
+def test_generate_email_from_raw_content(client):
+    with patch("main.generate_cold_email", return_value=FAKE_EMAIL) as mock_generate:
+        resp = client.post(
+            "/generate-email",
+            json={"content": "Some captured post text", "recipient_email": "jane@example.com"},
+        )
+
+    assert resp.status_code == 200
+    kwargs = mock_generate.call_args.kwargs
+    assert kwargs["content"] == "Some captured post text"
+
+
+def test_generate_email_requires_post_id_or_content(client):
+    resp = client.post("/generate-email", json={"recipient_email": "jane@example.com"})
+    assert resp.status_code == 422
+
+
+def test_generate_email_returns_404_for_missing_post(client):
+    resp = client.post("/generate-email", json={"post_id": 999, "recipient_email": "jane@example.com"})
+    assert resp.status_code == 404
+
+
+def test_generate_email_returns_502_on_generation_failure(client):
+    with patch("main.generate_cold_email", side_effect=RuntimeError("groq down")):
+        resp = client.post(
+            "/generate-email",
+            json={"content": "post text", "recipient_email": "jane@example.com"},
+        )
+
+    assert resp.status_code == 502
+    assert "groq down" in resp.json()["detail"]

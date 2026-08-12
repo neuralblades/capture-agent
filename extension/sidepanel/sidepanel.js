@@ -1,6 +1,7 @@
-import { TABS, ACTIONS_BY_TYPE, MessageType, ItemType, ItemStatus } from "./contracts.js";
+import { TABS, ACTIONS_BY_TYPE, ActionType, MessageType, ItemType, ItemStatus } from "./contracts.js";
 
 const BACKEND_POSTS_URL = "http://localhost:8000/posts";
+const BACKEND_GENERATE_EMAIL_URL = "http://localhost:8000/generate-email";
 
 /** Sample data used only when no extension runtime is present (e.g. previewing the HTML directly). */
 const SAMPLE_ITEMS = [
@@ -13,6 +14,7 @@ const SAMPLE_ITEMS = [
     createdAt: new Date().toISOString(),
     dueDate: new Date(Date.now() + 8 * 86400000).toISOString(),
     status: ItemStatus.NEW,
+    contactEmail: "grants@edu-example.org",
   },
   {
     id: "sample-2",
@@ -79,6 +81,7 @@ function mapPostToItem(post) {
   const deadline = Array.isArray(post.deadlines) && post.deadlines.length > 0 ? post.deadlines[0] : null;
   return {
     id: `post-${post.id}`,
+    postId: post.id,
     type: deadline ? ItemType.DEADLINE : ItemType.POST,
     title: post.summary || post.content,
     detail: deadline
@@ -88,6 +91,7 @@ function mapPostToItem(post) {
     createdAt: post.created_at,
     dueDate: deadline ? deadline.iso_date : null,
     status: ItemStatus.NEW,
+    contactEmail: post.contact_email || null,
   };
 }
 
@@ -157,6 +161,19 @@ function formatDetail(item) {
   return item.detail;
 }
 
+/**
+ * Actions to render for a card: the static per-type list, plus a "Draft
+ * Email" action whenever a contact email was detected on the post and the
+ * type-based list doesn't already include one.
+ * @param {ReturnType<typeof mapPostToItem>} item
+ */
+function actionsForItem(item) {
+  const base = ACTIONS_BY_TYPE[item.type] || [];
+  const hasDraftEmail = base.some(({ action }) => action === ActionType.DRAFT_EMAIL);
+  if (!item.contactEmail || hasDraftEmail) return base;
+  return [{ action: ActionType.DRAFT_EMAIL, label: "Draft Email" }, ...base];
+}
+
 function renderList() {
   const items = filteredItems();
   els.list.innerHTML = "";
@@ -188,7 +205,7 @@ function renderList() {
 
     const actions = document.createElement("div");
     actions.className = "item-actions";
-    for (const { action, label } of ACTIONS_BY_TYPE[item.type] || []) {
+    for (const { action, label } of actionsForItem(item)) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "action-btn" + (action === "dismiss" ? " destructive" : "");
@@ -199,6 +216,55 @@ function renderList() {
     card.appendChild(actions);
 
     els.list.appendChild(card);
+  }
+}
+
+/** Builds a Gmail compose deep link pre-filled with recipient, subject, and body. */
+function gmailComposeUrl({ to, subject, body }) {
+  const params = [
+    ["view", "cm"],
+    ["fs", "1"],
+    ["to", to],
+    ["su", subject],
+    ["body", body],
+  ]
+    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+    .join("&");
+  return `https://mail.google.com/mail/?${params}`;
+}
+
+async function draftEmail(item, triggerEl) {
+  if (!item.contactEmail) {
+    showToast("No contact email detected", true);
+    return;
+  }
+
+  triggerEl.disabled = true;
+  try {
+    const response = await fetch(BACKEND_GENERATE_EMAIL_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        post_id: item.postId,
+        recipient_email: item.contactEmail,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Draft request failed (${response.status})`);
+    }
+    const { subject, body } = await response.json();
+    const url = gmailComposeUrl({ to: item.contactEmail, subject, body });
+    if (hasExtensionRuntime && chrome.tabs?.create) {
+      chrome.tabs.create({ url });
+    } else {
+      window.open(url, "_blank", "noopener");
+    }
+    showToast("Draft ready in Gmail");
+  } catch (error) {
+    console.error("[CaptureAgent] Draft email failed", error);
+    showToast("Couldn't draft email", true);
+  } finally {
+    triggerEl.disabled = false;
   }
 }
 
@@ -213,6 +279,11 @@ async function runAction(item, action, triggerEl) {
     } else {
       window.open(item.sourceUrl, "_blank", "noopener");
     }
+    return;
+  }
+
+  if (action === ActionType.DRAFT_EMAIL) {
+    await draftEmail(item, triggerEl);
     return;
   }
 
