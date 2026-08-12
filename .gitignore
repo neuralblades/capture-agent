@@ -4,3 +4,23 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/.venv/
 backend/.pytest_cache/
+
+# Virtual Environments (covers both venv and .venv)
+venv/
+.venv/
+**/venv/
+**/.venv/
+
+# Secrets and Databases
+.env
+*.env
+*.db
+*.sqlite3
+**/capture_agent.db
+
+# Python Cache & Testing
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+**/.pytest_cache/
