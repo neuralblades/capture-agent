@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 DB_PATH = Path(__file__).parent / "capture_agent.db"
 
@@ -25,10 +26,22 @@ CREATE TABLE IF NOT EXISTS posts (
 """
 
 
-def get_connection() -> sqlite3.Connection:
+@contextmanager
+def get_connection() -> Iterator[sqlite3.Connection]:
+    """Yield a connection that commits/rolls back on exit and is always closed.
+
+    ``sqlite3.Connection`` used as a context manager only handles the
+    transaction (commit on success, rollback on exception) — it does not
+    close the connection. Wrap that behavior here so every call site gets
+    both without having to remember `conn.close()`.
+    """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def init_db() -> None:

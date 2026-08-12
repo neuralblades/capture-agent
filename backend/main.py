@@ -6,6 +6,7 @@ ISO dates), and persists the result to SQLite.
 """
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -25,11 +26,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Capture Agent Backend", version="0.1.0", lifespan=lifespan)
 
-# The extension runs from a chrome-extension:// origin with no fixed hostname
-# across installs, so origins can't be pinned to a single value here.
+# The extension runs from a chrome-extension:// origin whose ID varies per
+# install/machine, so a single fixed origin can't be pinned here. Restrict by
+# scheme instead of opening CORS to "*" — POST /capture is cost-incurring
+# (it triggers a paid Claude API call) and unauthenticated, so a wildcard
+# would let any website a user visits trigger it cross-origin. Override via
+# CORS_ORIGIN_REGEX for local development against a non-extension client.
+CORS_ORIGIN_REGEX = os.environ.get("CORS_ORIGIN_REGEX", r"^chrome-extension://.*$")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_methods=["*"],
     allow_headers=["*"],
 )
