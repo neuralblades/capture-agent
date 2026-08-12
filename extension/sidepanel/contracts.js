@@ -52,6 +52,22 @@ export const MessageType = Object.freeze({
  * @property {string} createdAt       ISO 8601 timestamp.
  * @property {string|null} dueDate    ISO 8601 timestamp, deadlines only.
  * @property {"new"|"done"|"archived"} status
+ * @property {number} [postId]        Backend post id, present for backend-sourced items.
+ * @property {string|null} [contactEmail]  Contact email detected in the post, if any. When
+ *   present, the sidepanel renders a "Draft Email" action regardless of item type.
+ */
+
+/**
+ * @typedef {Object} GenerateEmailRequest
+ * @property {number} [postId]
+ * @property {string} [content]
+ * @property {string} recipientEmail
+ */
+
+/**
+ * @typedef {Object} GeneratedEmail
+ * @property {string} subject
+ * @property {string} body
  */
 
 /**

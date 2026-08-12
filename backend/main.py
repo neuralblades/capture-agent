@@ -14,8 +14,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 import database
+from contact_extractor import find_contact_email
+from email_generator import generate_cold_email
 from llm_processor import extract_post_data
-from models import CapturedPost, PostRecord
+from models import CapturedPost, GenerateEmailRequest, GeneratedEmail, PostRecord
 
 
 @asynccontextmanager
@@ -66,6 +68,7 @@ def capture_post(post: CapturedPost) -> PostRecord:
         tags=extraction.tags,
         action_required=extraction.action_required,
         deadlines=[d.model_dump() for d in extraction.deadlines],
+        contact_email=find_contact_email(post.content),
     )
 
     record = database.get_post(post_id)
@@ -85,3 +88,24 @@ def get_post(post_id: int) -> PostRecord:
     if record is None:
         raise HTTPException(status_code=404, detail="Post not found")
     return PostRecord(**record)
+
+
+@app.post("/generate-email", response_model=GeneratedEmail)
+def generate_email(request: GenerateEmailRequest) -> GeneratedEmail:
+    if request.post_id is not None:
+        record = database.get_post(request.post_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Post not found")
+        content = record["content"]
+    else:
+        content = request.content
+
+    try:
+        return generate_cold_email(
+            content=content,
+            recipient_email=request.recipient_email,
+            sender_name=request.sender_name,
+            sender_company=request.sender_company,
+        )
+    except Exception as exc:  # noqa: BLE001 - surface LLM/API failures as a 502, not a 500
+        raise HTTPException(status_code=502, detail=f"Email generation failed: {exc}") from exc
