@@ -39,6 +39,10 @@ async function capturePost(message) {
     throw new Error(`Capture request failed with status ${response.status}`);
   }
 
+  // Let the sidepanel know new data is available so it can refresh. This is
+  // a no-op if the sidepanel isn't currently open to receive it.
+  chrome.runtime.sendMessage({ type: 'REFRESH_POSTS' }).catch(() => {});
+
   return response.json();
 }
 
