@@ -160,3 +160,37 @@ def test_generate_email_returns_502_on_generation_failure(client):
 
     assert resp.status_code == 502
     assert "groq down" in resp.json()["detail"]
+
+
+def test_generate_form_answer_returns_answer(client):
+    with patch("main.generate_form_answer", return_value="I'm excited to apply because...") as mock_generate:
+        resp = client.post(
+            "/generate-form-answer",
+            json={
+                "question": "Why do you want to join?",
+                "profile": {"full_name": "Jane Doe", "email": "jane@example.com"},
+            },
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"answer": "I'm excited to apply because..."}
+    args, _ = mock_generate.call_args
+    assert args[0] == "Why do you want to join?"
+    assert args[1].full_name == "Jane Doe"
+
+
+def test_generate_form_answer_defaults_profile_when_omitted(client):
+    with patch("main.generate_form_answer", return_value="answer") as mock_generate:
+        resp = client.post("/generate-form-answer", json={"question": "Why?"})
+
+    assert resp.status_code == 200
+    args, _ = mock_generate.call_args
+    assert args[1].full_name is None
+
+
+def test_generate_form_answer_returns_502_on_failure(client):
+    with patch("main.generate_form_answer", side_effect=RuntimeError("boom")):
+        resp = client.post("/generate-form-answer", json={"question": "Why?"})
+
+    assert resp.status_code == 502
+    assert "boom" in resp.json()["detail"]

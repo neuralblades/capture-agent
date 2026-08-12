@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from models import ExtractionResult
+from models import ExtractionResult, ProfileContext
 from providers import get_provider
 
 
@@ -16,3 +16,8 @@ def extract_post_data(content: str, captured_at: datetime | None = None) -> Extr
     """Run captured post content through the configured LLM provider."""
     reference_date = (captured_at or datetime.now(timezone.utc)).date().isoformat()
     return get_provider().extract(content, reference_date)
+
+
+def generate_form_answer(question: str, profile: ProfileContext) -> str:
+    """Generate a tailored answer to an open-ended form question via the configured LLM provider."""
+    return get_provider().generate_form_answer(question, profile)
