@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import email_generator
 from email_generator import generate_cold_email
 from models import GeneratedEmail
 
@@ -64,3 +65,21 @@ def test_generate_cold_email_raises_on_invalid_json():
     with patch("email_generator.get_client", return_value=fake_client):
         with pytest.raises(ValueError, match="parseable"):
             generate_cold_email(content="post", recipient_email="jane@example.com")
+
+
+def test_get_client_raises_clear_error_when_groq_api_key_missing(monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setattr(email_generator, "_client", None)
+
+    with pytest.raises(ValueError, match="GROQ_API_KEY is not set"):
+        email_generator.get_client()
+
+
+def test_get_client_succeeds_when_groq_api_key_present(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setattr(email_generator, "_client", None)
+
+    client = email_generator.get_client()
+
+    assert client is not None
+    assert email_generator.get_client() is client

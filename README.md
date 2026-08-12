@@ -106,7 +106,7 @@ Because every cross-module boundary is a typed JSON contract (see [Architecture]
 ### Prerequisites
 - Google Chrome (or another Manifest V3-compatible Chromium browser)
 - Python 3.12+
-- An API key for at least one LLM provider: [Anthropic](https://console.anthropic.com/) and/or [Groq](https://console.groq.com/)
+- An API key for at least one LLM provider: [Anthropic](https://console.anthropic.com/) and/or [Groq](https://console.groq.com/). Note that the "Draft Email" action always calls Groq directly (independent of `LLM_PROVIDER`), so a [Groq](https://console.groq.com/) key is required for that feature specifically even if `LLM_PROVIDER=anthropic`.
 
 ### 1. Backend
 

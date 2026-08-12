@@ -66,7 +66,7 @@ class GenerateEmailRequest(BaseModel):
 
     @model_validator(mode="after")
     def _require_post_id_or_content(self) -> "GenerateEmailRequest":
-        if not self.post_id and not self.content:
+        if self.post_id is None and not self.content:
             raise ValueError("Either post_id or content must be provided")
         return self
 

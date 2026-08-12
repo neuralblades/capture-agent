@@ -2,6 +2,14 @@
 
 Separate from providers/ since it produces a subject/body draft rather than
 the ExtractionResult shape the LLMProvider adapter interface is built around.
+
+Deliberately always uses Groq directly rather than going through
+providers.get_provider(): the tracker issue for this feature (#20) specifies
+Groq regardless of the LLM_PROVIDER setting, which only selects the /capture
+extraction backend (default "anthropic" per .env.example). That means
+GROQ_API_KEY must be set for /generate-email even on an anthropic-only setup
+-- get_client() below raises a clear error if it's missing, rather than
+letting a confusing SDK-level auth error surface instead.
 """
 from __future__ import annotations
 
@@ -34,7 +42,14 @@ def get_client() -> Groq:
     """Lazily construct the client so import-time errors don't break tooling."""
     global _client
     if _client is None:
-        _client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "GROQ_API_KEY is not set. Draft Email always uses Groq, independent of "
+                "LLM_PROVIDER (which only selects the /capture extraction backend), so it "
+                "must be set even when LLM_PROVIDER=anthropic."
+            )
+        _client = Groq(api_key=api_key)
     return _client
 
 
