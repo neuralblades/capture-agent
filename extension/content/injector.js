@@ -31,6 +31,14 @@
   }
 
   /**
+   * @param {unknown} error
+   * @returns {boolean}
+   */
+  function isExtensionContextInvalidated(error) {
+    return typeof error?.message === 'string' && error.message.includes('Extension context invalidated');
+  }
+
+  /**
    * @param {MouseEvent} event
    */
   async function handleCaptureClick(event) {
@@ -50,6 +58,15 @@
       await global.CaptureAgent.sendCapturePayload(payload);
       setButtonState(button, 'success');
     } catch (error) {
+      if (isExtensionContextInvalidated(error)) {
+        // The extension was reloaded/updated after this page loaded, so the
+        // content script's messaging channel to the background worker is
+        // permanently dead. Nothing short of a page refresh fixes this.
+        console.error('[CaptureAgent] Extension context invalidated', error);
+        setButtonState(button, 'error');
+        alert('Capture Agent was updated. Please refresh this page (F5) to continue capturing.');
+        return;
+      }
       console.error('[CaptureAgent] Failed to capture tweet', error);
       setButtonState(button, 'error');
     } finally {
