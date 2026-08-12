@@ -1,0 +1,100 @@
+"""SQLite persistence for captured posts and their extracted data."""
+from __future__ import annotations
+
+import json
+import sqlite3
+from pathlib import Path
+from typing import Any, Optional
+
+DB_PATH = Path(__file__).parent / "capture_agent.db"
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform TEXT NOT NULL,
+    author TEXT,
+    content TEXT NOT NULL,
+    url TEXT,
+    captured_at TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    tags TEXT NOT NULL,
+    action_required INTEGER NOT NULL,
+    deadlines TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+
+def get_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db() -> None:
+    with get_connection() as conn:
+        conn.execute(SCHEMA)
+
+
+def insert_post(
+    *,
+    platform: str,
+    author: Optional[str],
+    content: str,
+    url: Optional[str],
+    captured_at: str,
+    summary: str,
+    tags: list[str],
+    action_required: bool,
+    deadlines: list[dict[str, Any]],
+) -> int:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO posts (platform, author, content, url, captured_at, summary, tags, action_required, deadlines)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                platform,
+                author,
+                content,
+                url,
+                captured_at,
+                summary,
+                json.dumps(tags),
+                int(action_required),
+                json.dumps(deadlines),
+            ),
+        )
+        return cursor.lastrowid
+
+
+def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "platform": row["platform"],
+        "author": row["author"],
+        "content": row["content"],
+        "url": row["url"],
+        "captured_at": row["captured_at"],
+        "summary": row["summary"],
+        "tags": json.loads(row["tags"]),
+        "action_required": bool(row["action_required"]),
+        "deadlines": json.loads(row["deadlines"]),
+        "created_at": row["created_at"],
+    }
+
+
+def list_posts(limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM posts ORDER BY id DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+    return [row_to_dict(row) for row in rows]
+
+
+def get_post(post_id: int) -> Optional[dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM posts WHERE id = ?", (post_id,)).fetchone()
+    return row_to_dict(row) if row else None
