@@ -23,6 +23,16 @@
     const message = buildCaptureMessage(payload);
 
     return new Promise((resolve, reject) => {
+      // chrome.runtime.id disappears once the extension is reloaded/updated,
+      // even though the old content script (and its chrome.runtime reference)
+      // is still alive on the page. Calling sendMessage in that state throws
+      // synchronously in some browsers and hangs silently in others, so check
+      // up front and fail with a consistent, catchable error either way.
+      if (!chrome.runtime?.id) {
+        reject(new Error('Extension context invalidated'));
+        return;
+      }
+
       try {
         chrome.runtime.sendMessage(message, (response) => {
           const lastError = chrome.runtime.lastError;
