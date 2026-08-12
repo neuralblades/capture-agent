@@ -41,7 +41,9 @@ class EmailDraftRequest:
     max_words: int = 150
 
     @staticmethod
-    def from_dict(data: dict[str, Any]) -> "EmailDraftRequest":
+    def from_dict(data: Any) -> "EmailDraftRequest":
+        if not isinstance(data, dict):
+            raise ValueError(f"Request body must be a JSON object, got {type(data).__name__}")
         known = {f for f in EmailDraftRequest.__dataclass_fields__}
         missing = [f for f in REQUIRED_FIELDS if not data.get(f)]
         if missing:

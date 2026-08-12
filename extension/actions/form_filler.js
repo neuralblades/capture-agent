@@ -159,8 +159,15 @@
   }
 
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!message || message.action !== 'FILL_FORM') {
+        return undefined;
+      }
+      // Only act on messages from this extension itself — a DOM-mutating
+      // action like this must not be triggerable by other extensions or
+      // externally_connectable web pages.
+      if (!sender || sender.id !== chrome.runtime.id) {
+        sendResponse({ success: false, filled: 0, errors: [{ selector: '', error: 'Untrusted message sender' }] });
         return undefined;
       }
       const result = fillForm(message.payload);
