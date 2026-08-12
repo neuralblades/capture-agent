@@ -29,3 +29,15 @@ def test_get_provider_raises_on_unknown_provider(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     with pytest.raises(ValueError, match="Unsupported LLM_PROVIDER"):
         get_provider()
+
+
+def test_get_provider_caches_instance_per_provider_name(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    first = get_provider()
+    second = get_provider()
+    assert first is second
+
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    third = get_provider()
+    assert isinstance(third, GroqProvider)
+    assert third is not first
