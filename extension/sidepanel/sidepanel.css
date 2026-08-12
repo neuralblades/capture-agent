@@ -202,10 +202,50 @@ body {
   white-space: nowrap;
 }
 
+/* External link / metadata pills */
+.item-links {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+}
+
+.link-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid rgba(124, 92, 255, 0.35);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.link-pill:hover {
+  background: rgba(124, 92, 255, 0.28);
+}
+
 .item-actions {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.action-btn.primary {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: rgba(124, 92, 255, 0.35);
+}
+
+.action-btn.primary:hover {
+  background: rgba(124, 92, 255, 0.28);
 }
 
 .action-btn {
