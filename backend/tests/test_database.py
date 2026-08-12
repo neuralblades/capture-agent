@@ -39,6 +39,23 @@ def test_insert_and_get_post(isolated_db):
     assert record["platform"] == "linkedin"
     assert record["tags"] == ["a", "b"]
     assert record["deadlines"][0]["iso_date"] == "2026-08-14"
+    assert record["external_url"] is None
+    assert record["contact_email"] is None
+    assert record["action_type"] == "none"
+
+
+def test_insert_and_get_post_with_action_fields(isolated_db):
+    post_id = _insert(
+        external_url="https://forms.gle/abc123",
+        contact_email="jane@acme.com",
+        action_type="job_form",
+    )
+
+    record = database.get_post(post_id)
+    assert record is not None
+    assert record["external_url"] == "https://forms.gle/abc123"
+    assert record["contact_email"] == "jane@acme.com"
+    assert record["action_type"] == "job_form"
 
 
 def test_get_missing_post_returns_none(isolated_db):
@@ -69,6 +86,52 @@ def test_list_posts_respects_limit_and_offset(isolated_db):
 
     page = database.list_posts(limit=2, offset=1)
     assert [p["content"] for p in page] == ["post 3", "post 2"]
+
+
+def test_init_db_migrates_legacy_table_missing_new_columns(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    monkeypatch.setattr(database, "DB_PATH", db_path)
+
+    # Simulate a database created before external_url/contact_email/action_type existed.
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            platform TEXT NOT NULL,
+            author TEXT,
+            content TEXT NOT NULL,
+            url TEXT,
+            captured_at TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            tags TEXT NOT NULL,
+            action_required INTEGER NOT NULL,
+            deadlines TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    database.init_db()
+
+    post_id = _insert(action_type="cold_email", contact_email="a@b.com")
+    record = database.get_post(post_id)
+    assert record is not None
+    assert record["action_type"] == "cold_email"
+    assert record["contact_email"] == "a@b.com"
+    assert record["external_url"] is None
+
+
+def test_init_db_is_idempotent_on_already_migrated_table(isolated_db):
+    database.init_db()
+    database.init_db()
+
+    post_id = _insert(action_type="general_link")
+    record = database.get_post(post_id)
+    assert record is not None
+    assert record["action_type"] == "general_link"
 
 
 def test_connection_is_closed_after_use(isolated_db):

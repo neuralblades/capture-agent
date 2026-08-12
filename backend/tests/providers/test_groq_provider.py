@@ -40,6 +40,47 @@ def test_extract_parses_json_content_into_extraction_result():
     assert kwargs["messages"][1]["content"] == "some content"
 
 
+def test_extract_parses_external_url_contact_email_and_action_type():
+    payload = {
+        "summary": "s",
+        "tags": ["t"],
+        "action_required": True,
+        "deadlines": [],
+        "external_url": "https://forms.gle/abc123",
+        "contact_email": "jane@acme.com",
+        "action_type": "job_form",
+    }
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(content=json.dumps(payload))
+    provider = GroqProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        result = provider.extract("some content", "2026-08-12")
+
+    assert result.external_url == "https://forms.gle/abc123"
+    assert result.contact_email == "jane@acme.com"
+    assert result.action_type == "job_form"
+
+
+def test_extract_defaults_action_fields_when_omitted_from_response():
+    payload = {
+        "summary": "s",
+        "tags": ["t"],
+        "action_required": False,
+        "deadlines": [],
+    }
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(content=json.dumps(payload))
+    provider = GroqProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        result = provider.extract("some content", "2026-08-12")
+
+    assert result.external_url is None
+    assert result.contact_email is None
+    assert result.action_type == "none"
+
+
 def test_extract_raises_on_content_filter():
     fake_client = MagicMock()
     fake_client.chat.completions.create.return_value = _fake_response(finish_reason="content_filter")

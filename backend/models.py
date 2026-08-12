@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
+
+ActionType = Literal["job_form", "cold_email", "general_link", "none"]
 
 
 class CapturedPost(BaseModel):
@@ -36,6 +38,15 @@ class ExtractionResult(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Topical tags for the post")
     deadlines: list[Deadline] = Field(default_factory=list, description="Deadlines mentioned in the post")
     action_required: bool = Field(..., description="Whether the post implies an action the user must take")
+    external_url: Optional[str] = Field(
+        None, description="Third-party application/action URL mentioned in the post (e.g. a Google Form or job portal link), distinct from the source post's own URL"
+    )
+    contact_email: Optional[str] = Field(
+        None, description="Recruiter or founder contact email mentioned in the post, if any"
+    )
+    action_type: ActionType = Field(
+        "none", description="How the reader is expected to act: applying via a form, emailing a contact, following a general link, or no action"
+    )
 
 
 class ProfileContext(BaseModel):
@@ -78,7 +89,9 @@ class PostRecord(BaseModel):
     tags: list[str]
     action_required: bool
     deadlines: list[Deadline]
+    external_url: Optional[str] = None
     contact_email: Optional[str] = None
+    action_type: ActionType = "none"
     created_at: str
 
 

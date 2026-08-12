@@ -21,7 +21,10 @@ Respond with ONLY a single JSON object (no surrounding text or markdown) of this
   "summary": string,
   "tags": [string, ...],
   "deadlines": [{"text": string, "iso_date": string | null, "confidence": number between 0 and 1}, ...],
-  "action_required": boolean
+  "action_required": boolean,
+  "external_url": string | null,
+  "contact_email": string | null,
+  "action_type": "job_form" | "cold_email" | "general_link" | "none"
 }"""
 
 
