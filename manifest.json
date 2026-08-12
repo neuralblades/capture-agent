@@ -3,7 +3,7 @@
   "name": "Capture Agent",
   "version": "0.1.0",
   "description": "Capture tweets from X.com and hand them off to Capture Agent's AI workflows.",
-  "permissions": ["activeTab", "sidePanel"],
+  "permissions": ["activeTab","storage", "sidePanel"],
   "host_permissions": ["https://x.com/*", "https://twitter.com/*", "http://localhost:8000/*"],
   "background": {
     "service_worker": "extension/background/background.js",
