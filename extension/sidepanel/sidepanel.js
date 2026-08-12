@@ -83,21 +83,30 @@ const GOOGLE_FORM_PATTERN = /forms\.gle|docs\.google\.com\/forms/i;
  * @param {Record<string, unknown>} post
  * @returns {string[]}
  */
+function isHttpUrl(value) {
+  if (typeof value !== "string") return false;
+  try {
+    return /^https?:$/i.test(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
 function extractExternalUrls(post) {
   const urls = new Set();
 
-  if (typeof post.extracted_url === "string") urls.add(post.extracted_url);
+  if (isHttpUrl(post.extracted_url)) urls.add(post.extracted_url);
 
   if (Array.isArray(post.links)) {
     for (const link of post.links) {
-      if (typeof link === "string") urls.add(link);
-      else if (link && typeof link.url === "string") urls.add(link.url);
+      if (isHttpUrl(link)) urls.add(link);
+      else if (link && isHttpUrl(link.url)) urls.add(link.url);
     }
   }
 
   if (post.metadata && typeof post.metadata === "object") {
     const metaUrl = post.metadata.apply_url || post.metadata.form_url || post.metadata.link || post.metadata.url;
-    if (typeof metaUrl === "string") urls.add(metaUrl);
+    if (isHttpUrl(metaUrl)) urls.add(metaUrl);
   }
 
   if (typeof post.content === "string") {
@@ -113,13 +122,17 @@ function extractExternalUrls(post) {
 /**
  * Builds the pill list + primary "Apply / Open Form" target for a post's
  * extracted external links. Google Form links are preferred as the primary
- * apply target since they're the most common external application form.
+ * apply target since they're the most common external application form, so
+ * any match is floated to the front before truncating for display - otherwise
+ * a form link outside the first few candidates would be silently dropped.
  * @param {string[]} urls
  */
 function buildLinkInfo(urls) {
   if (urls.length === 0) return { applyUrl: null, links: [] };
 
-  const links = urls.slice(0, 3).map((url) => {
+  const ordered = [...urls].sort((a, b) => GOOGLE_FORM_PATTERN.test(b) - GOOGLE_FORM_PATTERN.test(a));
+
+  const links = ordered.slice(0, 3).map((url) => {
     if (GOOGLE_FORM_PATTERN.test(url)) return { url, label: "Google Form" };
     try {
       return { url, label: new URL(url).hostname.replace(/^www\./, "") };
@@ -128,8 +141,7 @@ function buildLinkInfo(urls) {
     }
   });
 
-  const formLink = links.find((link) => GOOGLE_FORM_PATTERN.test(link.url));
-  return { applyUrl: (formLink || links[0]).url, links };
+  return { applyUrl: links[0].url, links };
 }
 
 /**
