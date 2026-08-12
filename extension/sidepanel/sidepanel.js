@@ -15,6 +15,8 @@ const SAMPLE_ITEMS = [
     dueDate: new Date(Date.now() + 8 * 86400000).toISOString(),
     status: ItemStatus.NEW,
     contactEmail: "grants@edu-example.org",
+    applyUrl: "https://docs.google.com/forms/d/e/sample-scholarship-form/viewform",
+    links: [{ url: "https://docs.google.com/forms/d/e/sample-scholarship-form/viewform", label: "Google Form" }],
   },
   {
     id: "sample-2",
@@ -70,6 +72,78 @@ function sendMessage(message) {
   });
 }
 
+const URL_PATTERN = /https?:\/\/[^\s<>"')\]]+/gi;
+const GOOGLE_FORM_PATTERN = /forms\.gle|docs\.google\.com\/forms/i;
+
+/**
+ * Pulls candidate external URLs off a backend post: explicit fields the
+ * backend may set (extracted_url, links, metadata.*) plus anything found by
+ * scanning the raw content text. The post's own sourceUrl is excluded since
+ * that's already reachable via the "Open" action.
+ * @param {Record<string, unknown>} post
+ * @returns {string[]}
+ */
+function isHttpUrl(value) {
+  if (typeof value !== "string") return false;
+  try {
+    return /^https?:$/i.test(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
+function extractExternalUrls(post) {
+  const urls = new Set();
+
+  if (isHttpUrl(post.extracted_url)) urls.add(post.extracted_url);
+
+  if (Array.isArray(post.links)) {
+    for (const link of post.links) {
+      if (isHttpUrl(link)) urls.add(link);
+      else if (link && isHttpUrl(link.url)) urls.add(link.url);
+    }
+  }
+
+  if (post.metadata && typeof post.metadata === "object") {
+    const metaUrl = post.metadata.apply_url || post.metadata.form_url || post.metadata.link || post.metadata.url;
+    if (isHttpUrl(metaUrl)) urls.add(metaUrl);
+  }
+
+  if (typeof post.content === "string") {
+    for (const match of post.content.match(URL_PATTERN) || []) {
+      urls.add(match.replace(/[.,;:]+$/, ""));
+    }
+  }
+
+  urls.delete(post.url);
+  return Array.from(urls);
+}
+
+/**
+ * Builds the pill list + primary "Apply / Open Form" target for a post's
+ * extracted external links. Google Form links are preferred as the primary
+ * apply target since they're the most common external application form, so
+ * any match is floated to the front before truncating for display - otherwise
+ * a form link outside the first few candidates would be silently dropped.
+ * @param {string[]} urls
+ */
+function buildLinkInfo(urls) {
+  if (urls.length === 0) return { applyUrl: null, links: [] };
+
+  const ordered = [...urls].sort((a, b) => GOOGLE_FORM_PATTERN.test(b) - GOOGLE_FORM_PATTERN.test(a));
+
+  const links = ordered.slice(0, 3).map((url) => {
+    if (GOOGLE_FORM_PATTERN.test(url)) return { url, label: "Google Form" };
+    try {
+      return { url, label: new URL(url).hostname.replace(/^www\./, "") };
+    } catch {
+      return { url, label: "Link" };
+    }
+  });
+
+  return { applyUrl: links[0].url, links };
+}
+
 /**
  * Maps a backend PostRecord (see backend/models.py) to the CapturedItem shape
  * this UI renders. The backend doesn't classify posts as book/study_plan, so
@@ -79,6 +153,7 @@ function sendMessage(message) {
  */
 function mapPostToItem(post) {
   const deadline = Array.isArray(post.deadlines) && post.deadlines.length > 0 ? post.deadlines[0] : null;
+  const { applyUrl, links } = buildLinkInfo(extractExternalUrls(post));
   return {
     id: `post-${post.id}`,
     postId: post.id,
@@ -92,6 +167,8 @@ function mapPostToItem(post) {
     dueDate: deadline ? deadline.iso_date : null,
     status: ItemStatus.NEW,
     contactEmail: post.contact_email || null,
+    applyUrl,
+    links,
   };
 }
 
@@ -162,16 +239,27 @@ function formatDetail(item) {
 }
 
 /**
- * Actions to render for a card: the static per-type list, plus a "Draft
- * Email" action whenever a contact email was detected on the post and the
- * type-based list doesn't already include one.
+ * Actions to render for a card: the static per-type list, plus an "Apply /
+ * Open Form" action when an external application link was extracted, plus a
+ * "Draft Email" action whenever a contact email was detected on the post and
+ * the type-based list doesn't already include one.
  * @param {ReturnType<typeof mapPostToItem>} item
  */
 function actionsForItem(item) {
-  const base = ACTIONS_BY_TYPE[item.type] || [];
-  const hasDraftEmail = base.some(({ action }) => action === ActionType.DRAFT_EMAIL);
-  if (!item.contactEmail || hasDraftEmail) return base;
-  return [{ action: ActionType.DRAFT_EMAIL, label: "Draft Email" }, ...base];
+  const actions = [...(ACTIONS_BY_TYPE[item.type] || [])];
+
+  if (item.applyUrl) {
+    const openIdx = actions.findIndex((a) => a.action === ActionType.OPEN_SOURCE);
+    const insertAt = openIdx === -1 ? actions.length : openIdx;
+    actions.splice(insertAt, 0, { action: ActionType.APPLY_FORM, label: "Apply / Open Form" });
+  }
+
+  const hasDraftEmail = actions.some(({ action }) => action === ActionType.DRAFT_EMAIL);
+  if (item.contactEmail && !hasDraftEmail) {
+    actions.unshift({ action: ActionType.DRAFT_EMAIL, label: "Draft Email" });
+  }
+
+  return actions;
 }
 
 function renderList() {
@@ -200,6 +288,28 @@ function renderList() {
     detail.textContent = formatDetail(item);
     body.appendChild(title);
     body.appendChild(detail);
+
+    if (item.links && item.links.length > 0) {
+      const pills = document.createElement("div");
+      pills.className = "item-links";
+      for (const link of item.links) {
+        const pill = document.createElement("a");
+        pill.className = "link-pill";
+        pill.href = link.url;
+        pill.textContent = link.label;
+        pill.target = "_blank";
+        pill.rel = "noopener noreferrer";
+        pill.addEventListener("click", (e) => {
+          if (hasExtensionRuntime && chrome.tabs?.create) {
+            e.preventDefault();
+            chrome.tabs.create({ url: link.url });
+          }
+        });
+        pills.appendChild(pill);
+      }
+      body.appendChild(pills);
+    }
+
     head.appendChild(body);
     card.appendChild(head);
 
@@ -208,7 +318,7 @@ function renderList() {
     for (const { action, label } of actionsForItem(item)) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "action-btn" + (action === "dismiss" ? " destructive" : "");
+      btn.className = "action-btn" + (action === "dismiss" ? " destructive" : "") + (action === ActionType.APPLY_FORM ? " primary" : "");
       btn.textContent = label;
       btn.addEventListener("click", () => runAction(item, action, btn));
       actions.appendChild(btn);
@@ -269,15 +379,16 @@ async function draftEmail(item, triggerEl) {
 }
 
 async function runAction(item, action, triggerEl) {
-  if (action === "open_source") {
-    if (!item.sourceUrl) {
-      showToast("No source link available", true);
+  if (action === "open_source" || action === ActionType.APPLY_FORM) {
+    const url = action === ActionType.APPLY_FORM ? item.applyUrl : item.sourceUrl;
+    if (!url) {
+      showToast(action === ActionType.APPLY_FORM ? "No application link available" : "No source link available", true);
       return;
     }
     if (hasExtensionRuntime && chrome.tabs?.create) {
-      chrome.tabs.create({ url: item.sourceUrl });
+      chrome.tabs.create({ url });
     } else {
-      window.open(item.sourceUrl, "_blank", "noopener");
+      window.open(url, "_blank", "noopener");
     }
     return;
   }

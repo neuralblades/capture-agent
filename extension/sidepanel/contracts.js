@@ -29,6 +29,9 @@ export const ActionType = Object.freeze({
   FILL_FORM: "fill_form",
   DRAFT_EMAIL: "draft_email",
   OPEN_SOURCE: "open_source",
+  // Opens an external application/form link (e.g. Google Forms) extracted
+  // from the post, distinct from OPEN_SOURCE which opens the post itself.
+  APPLY_FORM: "apply_form",
   DISMISS: "dismiss",
 });
 
@@ -55,6 +58,8 @@ export const MessageType = Object.freeze({
  * @property {number} [postId]        Backend post id, present for backend-sourced items.
  * @property {string|null} [contactEmail]  Contact email detected in the post, if any. When
  *   present, the sidepanel renders a "Draft Email" action regardless of item type.
+ * @property {string|null} [applyUrl] External application/form URL extracted from the post, if any.
+ * @property {{url: string, label: string}[]} [links] External links extracted from the post, for display as pills.
  */
 
 /**
