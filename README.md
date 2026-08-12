@@ -9,35 +9,35 @@ Browsing X.com surfaces things worth acting on — a scholarship deadline, a boo
 ## Architecture
 
 ```
-┌─────────────────────────────┐        ┌──────────────────────────┐
-│         x.com / DOM          │        │   Extension Side Panel    │
-│  ┌─────────────────────────┐ │        │  extension/sidepanel/     │
-│  │  extension/content/      │ │        │  sidepanel.html/.js/.css  │
-│  │  observer → extract      │ │  msg   │  ┌──────────────────┐    │
-│  │  → injector (capture btn)│─┼───────▶│  │ background.js SW │    │
-│  │  → messaging.js          │ │        │  │ (message router) │    │
-│  └─────────────────────────┘ │        │  └─────────┬────────┘    │
-└─────────────────────────────┘        └────────────┼─────────────┘
-                                                       │ REST (JSON)
-                                                       ▼
-                                        ┌──────────────────────────┐
-                                        │      backend/ (FastAPI)   │
-                                        │  main.py → llm_processor  │
-                                        │  → providers/ (adapter)   │
-                                        │  → database.py (SQLite)   │
-                                        └─────────────┬─────────────┘
-                                                       │
-                                          ┌────────────┴────────────┐
-                                          ▼                         ▼
-                                   Anthropic (Claude)          Groq
+┌───────────────────────────────┐          ┌───────────────────────────┐
+│         x.com / DOM           │          │   Extension Side Panel    │
+│  ┌──────────────────────────┐ │          │  extension/sidepanel/     │
+│  │  extension/content/      │ │          │  sidepanel.html/.js/.css  │
+│  │  observer → extract      │ │   msg    │  ┌─────────────────────┐  │
+│  │  → injector (capture btn)│───────────▶      background.js SW    
+│  │  → messaging.js          │ │          │  │   (message router)  │  │
+│  └──────────────────────────┘ │          │  └─────────┬───────────┘  │
+└───────────────────────────────┘          └────────────┼──────────────┘
+                                                        │ REST (JSON)
+                                                        ▼
+                                            ┌───────────────────────────┐
+                                            │      backend/ (FastAPI)   │
+                                            │  main.py → llm_processor  │
+                                            │  → providers/ (adapter)   │
+                                            │  → database.py (SQLite)   │
+                                            └─────────────┬─────────────┘
+                                                          │
+                                             ┌────────────┴────────────┐
+                                             ▼                         ▼
+                                   Anthropic (Claude)                 Groq
 
-                    ┌───────────────────────────────────────┐
-                    │      extension/actions/ (JARVIS)        │
-                    │  form_filler.js   — DOM form fill        │
-                    │  email_drafter.py — Claude cold email    │
-                    │  invoked by the side panel via typed     │
-                    │  JSON request/response contracts         │
-                    └───────────────────────────────────────┘
+                                    ┌───────────────────────────────────────┐
+                                    │      extension/actions/ (JARVIS)      │
+                                    │  form_filler.js   — DOM form fill     │
+                                    │  email_drafter.py — Claude cold email │
+                                    │  invoked by the side panel via typed  │
+                                    │  JSON request/response contracts      │
+                                    └───────────────────────────────────────┘
 ```
 
 Every arrow between modules is a **typed JSON contract**, not a shared runtime — the content script, side panel, backend, and JARVIS actions each define their own request/response shapes (`extension/sidepanel/contracts.js`, `backend/models.py`, the schemas documented in `extension/actions/README.md`) so any module can be replaced without the others knowing it happened.
