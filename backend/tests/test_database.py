@@ -88,6 +88,52 @@ def test_list_posts_respects_limit_and_offset(isolated_db):
     assert [p["content"] for p in page] == ["post 3", "post 2"]
 
 
+def test_init_db_migrates_legacy_table_missing_new_columns(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    monkeypatch.setattr(database, "DB_PATH", db_path)
+
+    # Simulate a database created before external_url/contact_email/action_type existed.
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            platform TEXT NOT NULL,
+            author TEXT,
+            content TEXT NOT NULL,
+            url TEXT,
+            captured_at TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            tags TEXT NOT NULL,
+            action_required INTEGER NOT NULL,
+            deadlines TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    database.init_db()
+
+    post_id = _insert(action_type="cold_email", contact_email="a@b.com")
+    record = database.get_post(post_id)
+    assert record is not None
+    assert record["action_type"] == "cold_email"
+    assert record["contact_email"] == "a@b.com"
+    assert record["external_url"] is None
+
+
+def test_init_db_is_idempotent_on_already_migrated_table(isolated_db):
+    database.init_db()
+    database.init_db()
+
+    post_id = _insert(action_type="general_link")
+    record = database.get_post(post_id)
+    assert record is not None
+    assert record["action_type"] == "general_link"
+
+
 def test_connection_is_closed_after_use(isolated_db):
     with database.get_connection() as conn:
         conn.execute("SELECT 1")

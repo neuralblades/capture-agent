@@ -47,9 +47,24 @@ def get_connection() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+# Columns added to `posts` after its initial release. CREATE TABLE IF NOT
+# EXISTS is a no-op against a database file that already exists on disk (the
+# .db file is gitignored, so every local/deployed instance has its own), so
+# init_db() also backfills any of these that are missing via ALTER TABLE.
+_COLUMN_MIGRATIONS: list[tuple[str, str]] = [
+    ("external_url", "ALTER TABLE posts ADD COLUMN external_url TEXT"),
+    ("contact_email", "ALTER TABLE posts ADD COLUMN contact_email TEXT"),
+    ("action_type", "ALTER TABLE posts ADD COLUMN action_type TEXT NOT NULL DEFAULT 'none'"),
+]
+
+
 def init_db() -> None:
     with get_connection() as conn:
         conn.execute(SCHEMA)
+        existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(posts)")}
+        for column, ddl in _COLUMN_MIGRATIONS:
+            if column not in existing_columns:
+                conn.execute(ddl)
 
 
 def insert_post(
