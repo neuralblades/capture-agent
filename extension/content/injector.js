@@ -7,10 +7,57 @@
   const STATE_ATTR = 'data-capture-agent-state';
 
   const CAPTURE_ICON = `
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+    <svg class="capture-agent-btn-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
       <path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/>
       <circle cx="12" cy="13" r="3.5"/>
     </svg>`;
+
+  const LOADING_ICON = `
+    <svg class="capture-agent-btn-icon capture-agent-spinner" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="9" stroke-opacity="0.25"/>
+      <path d="M21 12a9 9 0 0 0-9-9" stroke-linecap="round"/>
+    </svg>`;
+
+  const SUCCESS_ICON = `
+    <svg class="capture-agent-btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+      <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+
+  const ERROR_ICON = `
+    <svg class="capture-agent-btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 3.5 21.5 20h-19L12 3.5z" stroke-linejoin="round"/>
+      <line x1="12" y1="9.5" x2="12" y2="13.5" stroke-linecap="round"/>
+      <circle cx="12" cy="16.5" r="0.75" fill="currentColor" stroke="none"/>
+    </svg>`;
+
+  const STATE_CONFIG = Object.freeze({
+    idle: {
+      icon: CAPTURE_ICON,
+      label: null,
+      title: 'Capture with Capture Agent',
+      ariaLabel: 'Capture with Capture Agent',
+    },
+    loading: {
+      icon: LOADING_ICON,
+      label: 'Capturing...',
+      title: 'Capturing post...',
+      ariaLabel: 'Capturing post...',
+    },
+    success: {
+      icon: SUCCESS_ICON,
+      label: '✓ Captured!',
+      title: 'Successfully Captured!',
+      ariaLabel: 'Successfully Captured!',
+    },
+    error: {
+      icon: ERROR_ICON,
+      label: 'Failed',
+      title: 'Failed to capture. Click to retry.',
+      ariaLabel: 'Failed to capture. Click to retry.',
+    },
+  });
+
+  const RESET_DELAY_MS = 3000;
 
   /**
    * @returns {HTMLButtonElement}
@@ -19,15 +66,45 @@
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'capture-agent-btn';
-    button.setAttribute('aria-label', 'Capture with Capture Agent');
-    button.setAttribute(STATE_ATTR, 'idle');
-    button.innerHTML = CAPTURE_ICON;
+    setButtonState(button, 'idle');
     return button;
   }
 
+  /**
+   * @param {HTMLButtonElement} button
+   * @param {'idle'|'loading'|'success'|'error'} state
+   */
   function setButtonState(button, state) {
+    const config = STATE_CONFIG[state] || STATE_CONFIG.idle;
+
     button.setAttribute(STATE_ATTR, state);
     button.disabled = state === 'loading';
+    button.setAttribute('title', config.title);
+    button.setAttribute('aria-label', config.ariaLabel);
+    button.innerHTML = config.label
+      ? `${config.icon}<span class="capture-agent-btn-label">${config.label}</span>`
+      : config.icon;
+  }
+
+  /**
+   * @param {HTMLButtonElement} button
+   */
+  function clearScheduledReset(button) {
+    if (button.__captureAgentResetTimer) {
+      clearTimeout(button.__captureAgentResetTimer);
+      button.__captureAgentResetTimer = null;
+    }
+  }
+
+  /**
+   * @param {HTMLButtonElement} button
+   */
+  function scheduleResetToIdle(button) {
+    clearScheduledReset(button);
+    button.__captureAgentResetTimer = setTimeout(() => {
+      button.__captureAgentResetTimer = null;
+      setButtonState(button, 'idle');
+    }, RESET_DELAY_MS);
   }
 
   /**
@@ -51,12 +128,14 @@
       return;
     }
 
+    clearScheduledReset(button);
     setButtonState(button, 'loading');
 
     try {
       const payload = global.CaptureAgent.extractTweetPayload(article);
       await global.CaptureAgent.sendCapturePayload(payload);
       setButtonState(button, 'success');
+      scheduleResetToIdle(button);
     } catch (error) {
       if (isExtensionContextInvalidated(error)) {
         // The extension was reloaded/updated after this page loaded, so the
@@ -69,8 +148,7 @@
       }
       console.error('[CaptureAgent] Failed to capture tweet', error);
       setButtonState(button, 'error');
-    } finally {
-      setTimeout(() => setButtonState(button, 'idle'), 2000);
+      scheduleResetToIdle(button);
     }
   }
 
