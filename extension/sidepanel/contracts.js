@@ -12,6 +12,9 @@ export const ItemType = Object.freeze({
   DEADLINE: "deadline",
   BOOK: "book",
   STUDY_PLAN: "study_plan",
+  // Fallback for a captured post that doesn't have a resolved deadline and
+  // isn't otherwise classified. Only shows under the "All" tab.
+  POST: "post",
 });
 
 /** @enum {string} */
@@ -34,6 +37,9 @@ export const MessageType = Object.freeze({
   GET_ITEMS: "GET_ITEMS",
   RUN_ACTION: "RUN_ACTION",
   ITEMS_UPDATED: "ITEMS_UPDATED",
+  // Broadcast by the background service worker after a post is successfully
+  // captured, so any open sidepanel can refresh from the backend.
+  REFRESH_POSTS: "REFRESH_POSTS",
 });
 
 /**
@@ -100,6 +106,10 @@ export const ACTIONS_BY_TYPE = Object.freeze({
   ],
   [ItemType.STUDY_PLAN]: [
     { action: ActionType.DRAFT_EMAIL, label: "Draft Email" },
+    { action: ActionType.OPEN_SOURCE, label: "Open" },
+    { action: ActionType.DISMISS, label: "Dismiss" },
+  ],
+  [ItemType.POST]: [
     { action: ActionType.OPEN_SOURCE, label: "Open" },
     { action: ActionType.DISMISS, label: "Dismiss" },
   ],

@@ -1,4 +1,6 @@
-import { TABS, ACTIONS_BY_TYPE, MessageType, ItemStatus } from "./contracts.js";
+import { TABS, ACTIONS_BY_TYPE, MessageType, ItemType, ItemStatus } from "./contracts.js";
+
+const BACKEND_POSTS_URL = "http://localhost:8000/posts";
 
 /** Sample data used only when no extension runtime is present (e.g. previewing the HTML directly). */
 const SAMPLE_ITEMS = [
@@ -66,15 +68,42 @@ function sendMessage(message) {
   });
 }
 
-async function loadItems() {
-  if (!hasExtensionRuntime) {
-    state.items = SAMPLE_ITEMS;
+/**
+ * Maps a backend PostRecord (see backend/models.py) to the CapturedItem shape
+ * this UI renders. The backend doesn't classify posts as book/study_plan, so
+ * anything without a resolved deadline falls back to the generic "post" type
+ * and only shows under the "All" tab.
+ * @param {Record<string, unknown>} post
+ */
+function mapPostToItem(post) {
+  const deadline = Array.isArray(post.deadlines) && post.deadlines.length > 0 ? post.deadlines[0] : null;
+  return {
+    id: `post-${post.id}`,
+    type: deadline ? ItemType.DEADLINE : ItemType.POST,
+    title: post.summary || post.content,
+    detail: deadline
+      ? deadline.text
+      : [post.author, post.platform].filter(Boolean).join(" · "),
+    sourceUrl: post.url || "",
+    createdAt: post.created_at,
+    dueDate: deadline ? deadline.iso_date : null,
+    status: ItemStatus.NEW,
+  };
+}
+
+async function loadPosts() {
+  try {
+    const response = await fetch(BACKEND_POSTS_URL);
+    if (!response.ok) {
+      throw new Error(`Failed to load posts (${response.status})`);
+    }
+    const posts = await response.json();
+    state.items = Array.isArray(posts) ? posts.map(mapPostToItem) : [];
     render();
-    return;
+  } catch (error) {
+    console.error("[CaptureAgent] Failed to load posts", error);
+    showToast("Couldn't load captures", true);
   }
-  const response = await sendMessage({ type: MessageType.GET_ITEMS });
-  state.items = response.ok && Array.isArray(response.items) ? response.items : [];
-  render();
 }
 
 function filteredItems() {
@@ -175,6 +204,10 @@ function renderList() {
 
 async function runAction(item, action, triggerEl) {
   if (action === "open_source") {
+    if (!item.sourceUrl) {
+      showToast("No source link available", true);
+      return;
+    }
     if (hasExtensionRuntime && chrome.tabs?.create) {
       chrome.tabs.create({ url: item.sourceUrl });
     } else {
@@ -231,6 +264,9 @@ els.search.addEventListener("input", (e) => {
 
 if (hasExtensionRuntime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === MessageType.REFRESH_POSTS) {
+      loadPosts();
+    }
     if (message?.type === MessageType.ITEMS_UPDATED && Array.isArray(message.items)) {
       state.items = message.items;
       render();
@@ -238,4 +274,17 @@ if (hasExtensionRuntime && chrome.runtime.onMessage) {
   });
 }
 
-loadItems();
+function boot() {
+  if (!hasExtensionRuntime) {
+    state.items = SAMPLE_ITEMS;
+    render();
+    return;
+  }
+  loadPosts();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", boot, { once: true });
+} else {
+  boot();
+}
