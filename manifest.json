@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Capture Agent",
+  "version": "0.1.0",
+  "description": "Capture tweets from X.com and hand them off to Capture Agent's AI workflows.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["https://x.com/*", "https://twitter.com/*"],
+  "background": {
+    "service_worker": "extension/background/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": [
+        "extension/content/selectors.js",
+        "extension/content/types.js",
+        "extension/content/extract.js",
+        "extension/content/messaging.js",
+        "extension/content/injector.js",
+        "extension/content/observer.js",
+        "extension/content/content.js"
+      ],
+      "css": ["extension/content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Capture Agent"
+  }
+}
