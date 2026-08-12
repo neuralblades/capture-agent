@@ -1,6 +1,15 @@
 // Content script: auto-fills Google Forms from the user's stored profile
-// (extension/sidepanel is expected to write to this key), and asks the AI
-// backend to draft answers for open-ended questions it can't match directly.
+// (extension/sidepanel is expected to write to this key), and offers to draft
+// answers for open-ended questions it can't match directly.
+//
+// Only the profile fill is automatic -- it's a local read + DOM write, no
+// network call. Drafting an open-ended answer sends the question (and the
+// user's profile, including resume text) to the backend, and Google Forms
+// URLs aren't limited to job applications, so that step is opt-in per field:
+// a "Draft with AI" button is attached next to each unmatched textarea
+// instead of firing automatically. This also means there's no unattended
+// retry loop -- each backend request is tied to a single user click.
+//
 // Runs standalone -- unlike the x.com content scripts, this is the only file
 // injected on docs.google.com/forms/*, so it can't rely on the CaptureAgent
 // globals those files set up.
@@ -17,6 +26,7 @@
 
   const PROFILE_STORAGE_KEY = 'profile';
   const FILLED_MARKER = 'captureAgentFilled';
+  const DRAFT_BUTTON_MARKER = 'captureAgentDraftButton';
   const AUTOFILL_DEBOUNCE_MS = 400;
 
   // Checked in order, so a specific pattern (e.g. "linkedin") wins over a
@@ -145,46 +155,69 @@
   }
 
   /**
-   * Fills every field that matches a known profile key directly. Returns the
-   * open-ended textareas left over (no profile match, but a resolvable
-   * question), which the AI-answer pass then handles.
+   * Attaches a "Draft with AI" button next to an unmatched open-ended
+   * textarea. The backend call only ever happens from this button's click
+   * handler -- never automatically -- so a failed request just leaves the
+   * button re-clickable instead of retrying on its own.
+   */
+  function attachDraftButton(element, labelText, profile) {
+    if (element.dataset[DRAFT_BUTTON_MARKER]) return;
+    element.dataset[DRAFT_BUTTON_MARKER] = '1';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = '✨ Draft with AI';
+    Object.assign(button.style, {
+      display: 'inline-block',
+      marginTop: '6px',
+      padding: '4px 10px',
+      fontSize: '12px',
+      color: '#1a73e8',
+      background: '#fff',
+      border: '1px solid #1a73e8',
+      borderRadius: '4px',
+      cursor: 'pointer',
+    });
+
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      button.disabled = true;
+      button.textContent = 'Drafting…';
+      try {
+        const answer = await requestFormAnswer(labelText, profile);
+        if (answer) fillField(element, answer);
+        button.textContent = '✨ Draft with AI';
+        button.disabled = false;
+      } catch (error) {
+        console.error('[CaptureAgent] Failed to generate form answer', error);
+        button.textContent = 'Draft failed -- retry';
+        button.disabled = false;
+      }
+    });
+
+    element.insertAdjacentElement('afterend', button);
+  }
+
+  /**
+   * Fills every field that matches a known profile key directly (a local
+   * read + DOM write, no network call), and attaches an opt-in "Draft with
+   * AI" button to unmatched open-ended textareas.
    */
   function fillStandardFields(profile) {
-    const remaining = [];
     const candidates = document.querySelectorAll("input[type='text'], input[type='email'], textarea");
 
     for (const element of candidates) {
-      if (!isCandidateInput(element)) continue;
-
       const labelText = labelTextFor(element);
       const key = matchProfileKey(labelText);
       const value = key && profile[key];
 
-      if (value) {
+      if (value && isCandidateInput(element)) {
         fillField(element, value);
         continue;
       }
 
-      if (element.tagName.toLowerCase() === 'textarea' && labelText) {
-        remaining.push({ element, labelText });
-      }
-    }
-
-    return remaining;
-  }
-
-  async function fillOpenEndedTextareas(remaining, profile) {
-    for (const { element, labelText } of remaining) {
-      // Mark eagerly so a rescan triggered by our own DOM changes (see the
-      // MutationObserver below) doesn't fire a second request for this field
-      // while the first is still in flight.
-      element.dataset[FILLED_MARKER] = '1';
-      try {
-        const answer = await requestFormAnswer(labelText, profile);
-        if (answer) fillField(element, answer);
-      } catch (error) {
-        console.error('[CaptureAgent] Failed to generate form answer', error);
-        delete element.dataset[FILLED_MARKER];
+      if (!value && element.tagName.toLowerCase() === 'textarea' && labelText) {
+        attachDraftButton(element, labelText, profile);
       }
     }
   }
@@ -193,15 +226,17 @@
     const profile = await getProfile();
     if (!profile || Object.keys(profile).length === 0) return;
 
-    const remaining = fillStandardFields(profile);
-    await fillOpenEndedTextareas(remaining, profile);
+    fillStandardFields(profile);
   }
 
   // Google Forms renders its questions asynchronously after the initial page
   // load (and can reveal more via branching logic), so a single pass at
   // document_idle can run before any inputs exist. Debounce and rescan on DOM
-  // mutations to catch fields that show up later; already-filled fields are
-  // skipped via the FILLED_MARKER so this doesn't repeatedly re-request answers.
+  // mutations to catch fields that show up later. This rescanning is cheap and
+  // side-effect-free: it only touches local storage and the DOM (FILLED_MARKER/
+  // DRAFT_BUTTON_MARKER make each field's fill/button-attach idempotent), and
+  // never itself triggers a backend call -- that only happens from a user's
+  // own click on a "Draft with AI" button.
   let debounceTimer = null;
   function scheduleAutofillPass() {
     clearTimeout(debounceTimer);
