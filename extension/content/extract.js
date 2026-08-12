@@ -3,11 +3,43 @@
   const { SELECTORS } = global.CaptureAgent;
 
   /**
+   * True if `node` sits inside a quote-tweet card nested within `article`
+   * (but is not `article` itself).
+   * @param {Element} node
    * @param {Element} article
-   * @returns {string|null}
+   * @returns {boolean}
+   */
+  function isInsideQuoteTweet(node, article) {
+    const container = node.closest(SELECTORS.quoteTweetContainer);
+    return Boolean(container) && container !== article && article.contains(container);
+  }
+
+  /**
+   * querySelectorAll scoped to `article`'s own content, excluding anything
+   * nested inside a quote-tweet card.
+   * @param {Element} article
+   * @param {string} selector
+   * @returns {Element[]}
+   */
+  function queryOwn(article, selector) {
+    return Array.from(article.querySelectorAll(selector)).filter((node) => !isInsideQuoteTweet(node, article));
+  }
+
+  /**
+   * @param {Element} article
+   * @param {string} selector
+   * @returns {Element|null}
+   */
+  function queryOwnFirst(article, selector) {
+    return queryOwn(article, selector)[0] ?? null;
+  }
+
+  /**
+   * @param {Element} article
+   * @returns {{tweetId: string|null, url: string|null}}
    */
   function extractTweetIdAndUrl(article) {
-    const statusLinks = article.querySelectorAll(SELECTORS.statusLink);
+    const statusLinks = queryOwn(article, SELECTORS.statusLink);
     for (const link of statusLinks) {
       const match = link.getAttribute('href')?.match(/\/status\/(\d+)/);
       if (match) {
@@ -22,7 +54,7 @@
    * @returns {{handle: string|null, displayName: string|null}}
    */
   function extractAuthor(article) {
-    const nameContainer = article.querySelector(SELECTORS.userNameContainer);
+    const nameContainer = queryOwnFirst(article, SELECTORS.userNameContainer);
     if (!nameContainer) {
       return { handle: null, displayName: null };
     }
@@ -43,7 +75,7 @@
    * @returns {string}
    */
   function extractText(article) {
-    const textNode = article.querySelector(SELECTORS.tweetText);
+    const textNode = queryOwnFirst(article, SELECTORS.tweetText);
     return textNode ? textNode.textContent.trim() : '';
   }
 
@@ -52,7 +84,7 @@
    * @returns {string|null}
    */
   function extractTimestamp(article) {
-    const timeNode = article.querySelector(SELECTORS.time);
+    const timeNode = queryOwnFirst(article, SELECTORS.time);
     return timeNode ? timeNode.getAttribute('datetime') : null;
   }
 
@@ -63,13 +95,13 @@
   function extractMedia(article) {
     const media = [];
 
-    article.querySelectorAll(SELECTORS.photo).forEach((img) => {
+    queryOwn(article, SELECTORS.photo).forEach((img) => {
       if (img.src) {
         media.push({ type: 'photo', url: img.src });
       }
     });
 
-    article.querySelectorAll(SELECTORS.video).forEach((video) => {
+    queryOwn(article, SELECTORS.video).forEach((video) => {
       const src = video.currentSrc || video.src;
       if (src) {
         media.push({ type: 'video', url: src });
