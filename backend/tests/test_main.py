@@ -10,6 +10,16 @@ FAKE_RESULT = ExtractionResult(
     deadlines=[Deadline(text="by Friday", iso_date="2026-08-14", confidence=0.9)],
 )
 
+FAKE_JOB_RESULT = ExtractionResult(
+    summary="Startup is hiring a founding engineer; apply via the linked form.",
+    tags=["hiring"],
+    action_required=True,
+    deadlines=[],
+    external_url="https://forms.gle/abc123",
+    contact_email="jane@acme.com",
+    action_type="job_form",
+)
+
 
 def test_health(client):
     resp = client.get("/health")
@@ -36,6 +46,33 @@ def test_capture_persists_and_returns_extraction(client):
     assert body["tags"] == ["design", "feedback"]
     assert body["action_required"] is True
     assert body["deadlines"][0]["iso_date"] == "2026-08-14"
+    assert body["external_url"] is None
+    assert body["contact_email"] is None
+    assert body["action_type"] == "none"
+
+
+def test_capture_returns_and_persists_external_url_and_contact_email(client):
+    with patch("main.extract_post_data", return_value=FAKE_JOB_RESULT):
+        resp = client.post(
+            "/capture",
+            json={
+                "platform": "twitter",
+                "content": "We're hiring! Apply here or email jane@acme.com",
+            },
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["external_url"] == "https://forms.gle/abc123"
+    assert body["contact_email"] == "jane@acme.com"
+    assert body["action_type"] == "job_form"
+
+    get_resp = client.get(f"/posts/{body['id']}")
+    assert get_resp.status_code == 200
+    stored = get_resp.json()
+    assert stored["external_url"] == "https://forms.gle/abc123"
+    assert stored["contact_email"] == "jane@acme.com"
+    assert stored["action_type"] == "job_form"
 
 
 def test_capture_defaults_captured_at_when_omitted(client):

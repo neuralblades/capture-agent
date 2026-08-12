@@ -39,6 +39,23 @@ def test_insert_and_get_post(isolated_db):
     assert record["platform"] == "linkedin"
     assert record["tags"] == ["a", "b"]
     assert record["deadlines"][0]["iso_date"] == "2026-08-14"
+    assert record["external_url"] is None
+    assert record["contact_email"] is None
+    assert record["action_type"] == "none"
+
+
+def test_insert_and_get_post_with_action_fields(isolated_db):
+    post_id = _insert(
+        external_url="https://forms.gle/abc123",
+        contact_email="jane@acme.com",
+        action_type="job_form",
+    )
+
+    record = database.get_post(post_id)
+    assert record is not None
+    assert record["external_url"] == "https://forms.gle/abc123"
+    assert record["contact_email"] == "jane@acme.com"
+    assert record["action_type"] == "job_form"
 
 
 def test_get_missing_post_returns_none(isolated_db):

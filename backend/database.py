@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS posts (
     tags TEXT NOT NULL,
     action_required INTEGER NOT NULL,
     deadlines TEXT NOT NULL,
+    external_url TEXT,
     contact_email TEXT,
+    action_type TEXT NOT NULL DEFAULT 'none',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -61,13 +63,18 @@ def insert_post(
     tags: list[str],
     action_required: bool,
     deadlines: list[dict[str, Any]],
+    external_url: Optional[str] = None,
     contact_email: Optional[str] = None,
+    action_type: str = "none",
 ) -> int:
     with get_connection() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO posts (platform, author, content, url, captured_at, summary, tags, action_required, deadlines, contact_email)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO posts (
+                platform, author, content, url, captured_at, summary, tags,
+                action_required, deadlines, external_url, contact_email, action_type
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 platform,
@@ -79,7 +86,9 @@ def insert_post(
                 json.dumps(tags),
                 int(action_required),
                 json.dumps(deadlines),
+                external_url,
                 contact_email,
+                action_type,
             ),
         )
         return cursor.lastrowid
@@ -97,7 +106,9 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "tags": json.loads(row["tags"]),
         "action_required": bool(row["action_required"]),
         "deadlines": json.loads(row["deadlines"]),
+        "external_url": row["external_url"],
         "contact_email": row["contact_email"],
+        "action_type": row["action_type"],
         "created_at": row["created_at"],
     }
 

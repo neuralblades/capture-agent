@@ -68,7 +68,9 @@ def capture_post(post: CapturedPost) -> PostRecord:
         tags=extraction.tags,
         action_required=extraction.action_required,
         deadlines=[d.model_dump() for d in extraction.deadlines],
-        contact_email=find_contact_email(post.content),
+        external_url=extraction.external_url,
+        contact_email=extraction.contact_email or find_contact_email(post.content),
+        action_type=extraction.action_type,
     )
 
     record = database.get_post(post_id)
