@@ -1,10 +1,13 @@
-import { TABS, ACTIONS_BY_TYPE, ActionType, MessageType, ItemType, ItemStatus } from "./contracts.js";
+import { ACTIONS_BY_TYPE, ActionType, MessageType, ItemType, ItemStatus } from "./contracts.js";
 
 const BACKEND_POSTS_URL = "http://localhost:8000/posts";
+const BACKEND_CATEGORIES_URL = "http://localhost:8000/categories";
 const BACKEND_GENERATE_EMAIL_URL = "http://localhost:8000/generate-email";
 const BACKEND_CALCULATE_MATCH_URL = "http://localhost:8000/calculate-match";
 // Written by extension/options/options.js and read by extension/content/form_autofill.js.
 const PROFILE_STORAGE_KEY = "profile";
+
+const ALL_CATEGORY = "All";
 
 /** Sample data used only when no extension runtime is present (e.g. previewing the HTML directly). */
 const SAMPLE_ITEMS = [
@@ -23,6 +26,7 @@ const SAMPLE_ITEMS = [
     matchScore: 85,
     matchingSkills: ["Python", "FastAPI"],
     missingSkills: ["Docker"],
+    category: "Deadlines",
   },
   {
     id: "sample-2",
@@ -33,6 +37,7 @@ const SAMPLE_ITEMS = [
     createdAt: new Date().toISOString(),
     dueDate: null,
     status: ItemStatus.NEW,
+    category: "Books",
   },
   {
     id: "sample-3",
@@ -44,6 +49,7 @@ const SAMPLE_ITEMS = [
     dueDate: null,
     status: ItemStatus.NEW,
     matchScore: 42,
+    category: "Study Plans",
   },
 ];
 
@@ -51,10 +57,11 @@ const hasExtensionRuntime =
   typeof chrome !== "undefined" && !!chrome.runtime && !!chrome.runtime.id;
 
 const state = {
-  activeTab: "all",
+  activeTab: ALL_CATEGORY,
   query: "",
   items: [],
   sortByMatch: false,
+  categories: [{ name: ALL_CATEGORY, count: 0 }],
 };
 
 const els = {
@@ -194,6 +201,7 @@ function mapPostToItem(post) {
     matchScore: typeof post.match_score === "number" ? post.match_score : null,
     matchingSkills: [],
     missingSkills: [],
+    category: post.category || "General",
   };
 }
 
@@ -243,10 +251,32 @@ async function calculateMatchForItem(item, resumeText) {
   }
 }
 
+/** Fetches category filter pills (name + post count) from the backend. Falls
+ * back to leaving the existing pills in place if the request fails, since a
+ * stale "All" pill is less disruptive than the tab bar disappearing. */
+async function loadCategories() {
+  try {
+    const response = await fetch(BACKEND_CATEGORIES_URL);
+    if (!response.ok) {
+      throw new Error(`Failed to load categories (${response.status})`);
+    }
+    const categories = await response.json();
+    if (Array.isArray(categories) && categories.length > 0) {
+      state.categories = categories;
+      if (!categories.some((c) => c.name === state.activeTab)) {
+        state.activeTab = ALL_CATEGORY;
+      }
+    }
+    renderTabs();
+  } catch (error) {
+    console.error("[CaptureAgent] Failed to load categories", error);
+  }
+}
+
 function filteredItems() {
   const q = state.query.trim().toLowerCase();
   const items = state.items.filter((item) => {
-    if (state.activeTab !== "all" && item.type !== state.activeTab) return false;
+    if (state.activeTab !== ALL_CATEGORY && item.category !== state.activeTab) return false;
     if (item.status === ItemStatus.ARCHIVED) return false;
     if (!q) return true;
     return (
@@ -262,29 +292,18 @@ function filteredItems() {
   return items;
 }
 
-function countsByTab() {
-  const counts = { all: 0 };
-  for (const item of state.items) {
-    if (item.status === ItemStatus.ARCHIVED) continue;
-    counts.all += 1;
-    counts[item.type] = (counts[item.type] || 0) + 1;
-  }
-  return counts;
-}
-
 function renderTabs() {
-  const counts = countsByTab();
   els.tabs.innerHTML = "";
-  for (const tab of TABS) {
+  for (const category of state.categories) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "tab";
     btn.role = "tab";
-    btn.dataset.tabId = tab.id;
-    btn.setAttribute("aria-selected", String(tab.id === state.activeTab));
-    btn.innerHTML = `${tab.label}<span class="tab-count">${counts[tab.id] || 0}</span>`;
+    btn.dataset.tabId = category.name;
+    btn.setAttribute("aria-selected", String(category.name === state.activeTab));
+    btn.innerHTML = `${category.name}<span class="tab-count">${category.count}</span>`;
     btn.addEventListener("click", () => {
-      state.activeTab = tab.id;
+      state.activeTab = category.name;
       render();
     });
     els.tabs.appendChild(btn);
@@ -506,6 +525,7 @@ async function runAction(item, action, triggerEl) {
   if (action === "dismiss") {
     state.items = state.items.filter((i) => i.id !== item.id);
     render();
+    loadCategories();
   }
   showToast(response.ok ? "Done" : "Action failed", !response.ok);
 }
@@ -546,6 +566,7 @@ if (hasExtensionRuntime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === MessageType.REFRESH_POSTS) {
       loadPosts();
+      loadCategories();
     }
     if (message?.type === MessageType.ITEMS_UPDATED && Array.isArray(message.items)) {
       state.items = message.items;
@@ -554,13 +575,24 @@ if (hasExtensionRuntime && chrome.runtime.onMessage) {
   });
 }
 
+/** Builds category filter pills locally from sample data, for previewing the HTML directly without a backend. */
+function categoriesFromItems(items) {
+  const counts = new Map();
+  for (const item of items) {
+    counts.set(item.category, (counts.get(item.category) || 0) + 1);
+  }
+  return [{ name: ALL_CATEGORY, count: items.length }, ...[...counts].map(([name, count]) => ({ name, count }))];
+}
+
 function boot() {
   if (!hasExtensionRuntime) {
     state.items = SAMPLE_ITEMS;
+    state.categories = categoriesFromItems(SAMPLE_ITEMS);
     render();
     return;
   }
   loadPosts();
+  loadCategories();
 }
 
 if (document.readyState === "loading") {

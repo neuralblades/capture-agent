@@ -35,6 +35,10 @@ class ExtractionResult(BaseModel):
     """Structured output produced by the LLM processor for a captured post."""
 
     summary: str = Field(..., description="One-sentence summary of the post")
+    category: str = Field(
+        "General",
+        description="Concise, open-ended 1-2 word category for the post (e.g. 'AI Tools', 'Research', 'Finance', 'Career')",
+    )
     tags: list[str] = Field(default_factory=list, description="Topical tags for the post")
     deadlines: list[Deadline] = Field(default_factory=list, description="Deadlines mentioned in the post")
     action_required: bool = Field(..., description="Whether the post implies an action the user must take")
@@ -86,6 +90,7 @@ class PostRecord(BaseModel):
     url: Optional[str]
     captured_at: str
     summary: str
+    category: str = "General"
     tags: list[str]
     action_required: bool
     deadlines: list[Deadline]
@@ -115,6 +120,13 @@ class MatchResult(BaseModel):
     missing_skills: list[str] = Field(
         default_factory=list, description="Skills/requirements mentioned in the post that the resume does not show"
     )
+
+
+class CategoryCount(BaseModel):
+    """A category and how many stored posts currently carry it."""
+
+    name: str = Field(..., description="Category name, or 'All' for the total across every post")
+    count: int = Field(..., description="Number of stored posts in this category")
 
 
 class GenerateEmailRequest(BaseModel):

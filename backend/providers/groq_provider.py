@@ -25,6 +25,7 @@ JSON_INSTRUCTIONS = """
 Respond with ONLY a single JSON object (no surrounding text or markdown) of this shape:
 {
   "summary": string,
+  "category": string,
   "tags": [string, ...],
   "deadlines": [{"text": string, "iso_date": string | null, "confidence": number between 0 and 1}, ...],
   "action_required": boolean,

@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS posts (
     external_url TEXT,
     contact_email TEXT,
     action_type TEXT NOT NULL DEFAULT 'none',
+    category TEXT NOT NULL DEFAULT 'General',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -56,6 +57,7 @@ _COLUMN_MIGRATIONS: list[tuple[str, str]] = [
     ("contact_email", "ALTER TABLE posts ADD COLUMN contact_email TEXT"),
     ("action_type", "ALTER TABLE posts ADD COLUMN action_type TEXT NOT NULL DEFAULT 'none'"),
     ("match_score", "ALTER TABLE posts ADD COLUMN match_score INTEGER"),
+    ("category", "ALTER TABLE posts ADD COLUMN category TEXT NOT NULL DEFAULT 'General'"),
 ]
 
 
@@ -82,15 +84,16 @@ def insert_post(
     external_url: Optional[str] = None,
     contact_email: Optional[str] = None,
     action_type: str = "none",
+    category: str = "General",
 ) -> int:
     with get_connection() as conn:
         cursor = conn.execute(
             """
             INSERT INTO posts (
                 platform, author, content, url, captured_at, summary, tags,
-                action_required, deadlines, external_url, contact_email, action_type
+                action_required, deadlines, external_url, contact_email, action_type, category
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 platform,
@@ -105,6 +108,7 @@ def insert_post(
                 external_url,
                 contact_email,
                 action_type,
+                category,
             ),
         )
         return cursor.lastrowid
@@ -126,6 +130,7 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "contact_email": row["contact_email"],
         "action_type": row["action_type"],
         "match_score": row["match_score"],
+        "category": row["category"],
         "created_at": row["created_at"],
     }
 
@@ -153,6 +158,21 @@ def get_post_by_url(url: str) -> Optional[dict[str, Any]]:
             "SELECT * FROM posts WHERE url = ? ORDER BY id DESC LIMIT 1", (url,)
         ).fetchone()
     return row_to_dict(row) if row else None
+
+
+def category_counts() -> list[dict[str, Any]]:
+    """Unique categories currently present, with post counts, plus an 'All' total.
+
+    'All' is listed first, followed by categories ordered by count (most
+    posts first, ties broken alphabetically) so the busiest filter pills show
+    up first in the side panel.
+    """
+    with get_connection() as conn:
+        total = conn.execute("SELECT COUNT(*) AS n FROM posts").fetchone()["n"]
+        rows = conn.execute(
+            "SELECT category AS name, COUNT(*) AS count FROM posts GROUP BY category ORDER BY count DESC, name ASC"
+        ).fetchall()
+    return [{"name": "All", "count": total}] + [{"name": row["name"], "count": row["count"]} for row in rows]
 
 
 def delete_post(post_id: int) -> bool:

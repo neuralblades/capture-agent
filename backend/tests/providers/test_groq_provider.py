@@ -81,6 +81,41 @@ def test_extract_defaults_action_fields_when_omitted_from_response():
     assert result.action_type == "none"
 
 
+def test_extract_parses_category():
+    payload = {
+        "summary": "s",
+        "category": "AI Tools",
+        "tags": ["t"],
+        "action_required": False,
+        "deadlines": [],
+    }
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(content=json.dumps(payload))
+    provider = GroqProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        result = provider.extract("some content", "2026-08-12")
+
+    assert result.category == "AI Tools"
+
+
+def test_extract_defaults_category_when_omitted_from_response():
+    payload = {
+        "summary": "s",
+        "tags": ["t"],
+        "action_required": False,
+        "deadlines": [],
+    }
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(content=json.dumps(payload))
+    provider = GroqProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        result = provider.extract("some content", "2026-08-12")
+
+    assert result.category == "General"
+
+
 def test_extract_raises_on_content_filter():
     fake_client = MagicMock()
     fake_client.chat.completions.create.return_value = _fake_response(finish_reason="content_filter")

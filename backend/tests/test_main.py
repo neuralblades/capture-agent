@@ -334,3 +334,36 @@ def test_calculate_match_returns_502_on_failure(client):
 
     assert resp.status_code == 502
     assert "groq down" in resp.json()["detail"]
+
+
+def test_capture_persists_and_returns_category(client):
+    result = FAKE_RESULT.model_copy(update={"category": "AI Tools"})
+    with patch("main.extract_post_data", return_value=result):
+        resp = client.post("/capture", json={"platform": "twitter", "content": "some AI tool"})
+
+    assert resp.status_code == 200
+    assert resp.json()["category"] == "AI Tools"
+
+
+def test_categories_empty_when_no_posts(client):
+    resp = client.get("/categories")
+    assert resp.status_code == 200
+    assert resp.json() == [{"name": "All", "count": 0}]
+
+
+def test_categories_aggregates_across_posts(client):
+    ai_result = FAKE_RESULT.model_copy(update={"category": "AI Tools"})
+    finance_result = FAKE_RESULT.model_copy(update={"category": "Finance"})
+
+    with patch("main.extract_post_data", return_value=ai_result):
+        client.post("/capture", json={"platform": "twitter", "content": "post 1"})
+        client.post("/capture", json={"platform": "twitter", "content": "post 2"})
+    with patch("main.extract_post_data", return_value=finance_result):
+        client.post("/capture", json={"platform": "twitter", "content": "post 3"})
+
+    resp = client.get("/categories")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body[0] == {"name": "All", "count": 3}
+    assert {"name": "AI Tools", "count": 2} in body
+    assert {"name": "Finance", "count": 1} in body

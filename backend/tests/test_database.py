@@ -172,6 +172,40 @@ def test_init_db_is_idempotent_on_already_migrated_table(isolated_db):
     assert record["action_type"] == "general_link"
 
 
+def test_category_defaults_to_general(isolated_db):
+    post_id = _insert()
+    assert database.get_post(post_id)["category"] == "General"
+
+
+def test_category_round_trips(isolated_db):
+    post_id = _insert(category="AI Tools")
+    assert database.get_post(post_id)["category"] == "AI Tools"
+
+
+def test_category_counts_includes_all_total_and_per_category_counts(isolated_db):
+    _insert(category="AI Tools")
+    _insert(category="AI Tools")
+    _insert(category="Finance")
+
+    counts = database.category_counts()
+    assert counts[0] == {"name": "All", "count": 3}
+    assert {"name": "AI Tools", "count": 2} in counts
+    assert {"name": "Finance", "count": 1} in counts
+
+
+def test_category_counts_orders_by_count_desc_then_name(isolated_db):
+    _insert(category="Zebra")
+    _insert(category="Alpha")
+    _insert(category="Alpha")
+
+    counts = database.category_counts()
+    assert [c["name"] for c in counts] == ["All", "Alpha", "Zebra"]
+
+
+def test_category_counts_empty_db_returns_only_all_zero(isolated_db):
+    assert database.category_counts() == [{"name": "All", "count": 0}]
+
+
 def test_connection_is_closed_after_use(isolated_db):
     with database.get_connection() as conn:
         conn.execute("SELECT 1")
