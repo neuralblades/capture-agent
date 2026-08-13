@@ -1,16 +1,24 @@
-// Minimal MV3 service worker: relays CAPTURE_TWEET messages from the content
-// script to the AI backend, and opens the side panel on the toolbar icon
-// click. Intentionally thin -- structured extraction and JARVIS actions
-// belong to those modules, not extension core.
+// Minimal MV3 service worker: relays CAPTURE_TWEET/CAPTURE_POST messages
+// from content scripts to the AI backend, and opens the side panel on the
+// toolbar icon click. Intentionally thin -- structured extraction and
+// JARVIS actions belong to those modules, not extension core.
+
+import { submitCapture } from './capture_client.js';
+// Registers the right-click "Capture with Opportunity Agent" menu item; runs
+// for its side effects only, so no imports are named here.
+import './context_menu.js';
 
 const MESSAGE_TYPES = Object.freeze({
   CAPTURE_TWEET: 'CAPTURE_TWEET',
+  // Generic capture message used by non-x.com content scripts (e.g.
+  // linkedin.js), which carries its own `platform` instead of it being
+  // implied by the message type.
+  CAPTURE_POST: 'CAPTURE_POST',
   GENERATE_FORM_ANSWER: 'GENERATE_FORM_ANSWER',
   MAP_FORM_FIELDS: 'MAP_FORM_FIELDS',
   RUN_ACTION: 'RUN_ACTION',
 });
 
-const CAPTURE_ENDPOINT = 'http://localhost:8000/capture';
 const FORM_ANSWER_ENDPOINT = 'http://localhost:8000/generate-form-answer';
 const MAP_FORM_FIELDS_ENDPOINT = 'http://localhost:8000/map-form-fields';
 const POSTS_ENDPOINT = 'http://localhost:8000/posts';
@@ -29,27 +37,32 @@ chrome.sidePanel
 async function capturePost(message) {
   const { payload, capturedAt } = message;
 
-  const response = await fetch(CAPTURE_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      platform: 'twitter',
-      author: payload.author?.displayName || payload.author?.handle || null,
-      content: payload.text,
-      url: payload.url,
-      captured_at: capturedAt,
-    }),
+  return submitCapture({
+    platform: 'twitter',
+    author: payload.author?.displayName || payload.author?.handle || null,
+    content: payload.text,
+    url: payload.url,
+    capturedAt,
   });
+}
 
-  if (!response.ok) {
-    throw new Error(`Capture request failed with status ${response.status}`);
-  }
+/**
+ * Handles CAPTURE_POST messages from content scripts other than x.com's
+ * (e.g. linkedin.js), whose payload is already a flat {author, text, url}
+ * shape rather than x.com's nested author object.
+ * @param {{platform: string, payload: {author?: string|null, text: string, url?: string|null}, capturedAt: string}} message
+ * @returns {Promise<unknown>}
+ */
+async function captureGenericPost(message) {
+  const { payload, capturedAt, platform } = message;
 
-  // Let the sidepanel know new data is available so it can refresh. This is
-  // a no-op if the sidepanel isn't currently open to receive it.
-  chrome.runtime.sendMessage({ type: 'REFRESH_POSTS' }).catch(() => {});
-
-  return response.json();
+  return submitCapture({
+    platform,
+    author: payload.author ?? null,
+    content: payload.text,
+    url: payload.url ?? null,
+    capturedAt,
+  });
 }
 
 /**
@@ -175,6 +188,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
     // Keep the message channel open: capturePost() resolves/rejects
     // asynchronously, and sendResponse() above runs after this listener returns.
+    return true;
+  }
+
+  if (message.type === MESSAGE_TYPES.CAPTURE_POST) {
+    captureGenericPost(message)
+      .then((post) => sendResponse({ ok: true, post }))
+      .catch((error) => {
+        console.error('[CaptureAgent] Capture failed', error);
+        sendResponse({ ok: false, error: error.message });
+      });
+
     return true;
   }
 

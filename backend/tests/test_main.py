@@ -76,6 +76,26 @@ def test_capture_returns_and_persists_external_url_and_contact_email(client):
     assert stored["action_type"] == "job_form"
 
 
+def test_capture_tags_web_selection_platform(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        resp = client.post(
+            "/capture",
+            json={
+                "platform": "web_selection",
+                "content": "Some highlighted text captured via the right-click menu.",
+                "url": "https://example.com/article",
+            },
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["platform"] == "web_selection"
+    assert body["author"] is None
+
+    get_resp = client.get(f"/posts/{body['id']}")
+    assert get_resp.json()["platform"] == "web_selection"
+
+
 def test_capture_defaults_captured_at_when_omitted(client):
     with patch("main.extract_post_data", return_value=FAKE_RESULT) as mock_extract:
         resp = client.post(

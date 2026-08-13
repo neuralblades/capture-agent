@@ -12,7 +12,9 @@ ActionType = Literal["job_form", "cold_email", "general_link", "none"]
 class CapturedPost(BaseModel):
     """A post captured by the extension's content script."""
 
-    platform: str = Field(..., description="Source platform, e.g. 'linkedin', 'twitter'")
+    platform: str = Field(
+        ..., description="Source platform, e.g. 'twitter', 'linkedin', or 'web_selection' for a right-click capture of highlighted text on any page"
+    )
     author: Optional[str] = Field(None, description="Display name of the post author")
     content: str = Field(..., description="Raw text content of the captured post")
     url: Optional[str] = Field(None, description="URL of the captured post")
