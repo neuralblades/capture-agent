@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import database
 from contact_extractor import find_contact_email
 from email_generator import generate_cold_email
-from llm_processor import calculate_match_score, extract_post_data, generate_form_answer
+from llm_processor import calculate_match_score, extract_post_data, generate_form_answer, map_form_fields
 from models import (
     CalculateMatchRequest,
     CapturedPost,
@@ -25,6 +25,8 @@ from models import (
     FormAnswerResponse,
     GenerateEmailRequest,
     GeneratedEmail,
+    MapFormFieldsRequest,
+    MapFormFieldsResponse,
     MatchResult,
     PostRecord,
 )
@@ -126,6 +128,16 @@ def calculate_match(request: CalculateMatchRequest) -> MatchResult:
 @app.get("/categories", response_model=list[CategoryCount])
 def get_categories() -> list[CategoryCount]:
     return [CategoryCount(**row) for row in database.category_counts()]
+
+
+@app.post("/map-form-fields", response_model=MapFormFieldsResponse)
+def map_form_fields_route(request: MapFormFieldsRequest) -> MapFormFieldsResponse:
+    try:
+        mappings = map_form_fields(request.fields, request.profile)
+    except Exception as exc:  # noqa: BLE001 - surface LLM/API failures as a 502, not a 500
+        raise HTTPException(status_code=502, detail=f"Field mapping failed: {exc}") from exc
+
+    return MapFormFieldsResponse(mappings=mappings)
 
 
 @app.get("/posts", response_model=list[PostRecord])

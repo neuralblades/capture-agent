@@ -2,8 +2,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from models import Deadline, ExtractionResult, MatchResult, ProfileContext
-from providers.anthropic_provider import AnthropicProvider
+from models import (
+    Deadline,
+    ExtractionResult,
+    FieldMapping,
+    FormFieldDescriptor,
+    FormFieldOption,
+    MatchResult,
+    ProfileContext,
+)
+from providers.anthropic_provider import AnthropicProvider, _FieldMappingBatch
 
 
 def _fake_response(parsed_output=None, stop_reason="end_turn"):
@@ -138,6 +146,58 @@ def test_calculate_match_raises_when_unparsed():
     with patch.object(provider, "get_client", return_value=fake_client):
         with pytest.raises(ValueError, match="parseable"):
             provider.calculate_match("content", "resume")
+
+
+def test_map_form_fields_returns_empty_for_no_fields():
+    provider = AnthropicProvider()
+    assert provider.map_form_fields([], ProfileContext()) == []
+
+
+def test_map_form_fields_returns_parsed_mappings_and_filters_unknown_indices():
+    fields = [
+        FormFieldDescriptor(
+            index=0,
+            type="radio-group",
+            label="Authorized to work?",
+            options=[FormFieldOption(value="opt-yes", label="Yes"), FormFieldOption(value="opt-no", label="No")],
+        ),
+    ]
+    parsed = _FieldMappingBatch(mappings=[FieldMapping(index=0, value="opt-yes"), FieldMapping(index=99, value="drop me")])
+    fake_client = MagicMock()
+    fake_client.messages.parse.return_value = _fake_response(parsed_output=parsed)
+    provider = AnthropicProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        mappings = provider.map_form_fields(fields, ProfileContext(work_authorized=True))
+
+    assert [m.index for m in mappings] == [0]
+    assert mappings[0].value == "opt-yes"
+    _, kwargs = fake_client.messages.parse.call_args
+    assert kwargs["model"] == "claude-opus-5"
+    assert kwargs["output_format"] is _FieldMappingBatch
+    assert "Authorized to work?" in kwargs["system"]
+
+
+def test_map_form_fields_raises_on_refusal():
+    fake_client = MagicMock()
+    fake_client.messages.parse.return_value = _fake_response(stop_reason="refusal")
+    provider = AnthropicProvider()
+    fields = [FormFieldDescriptor(index=0, type="text", label="City")]
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        with pytest.raises(ValueError, match="declined"):
+            provider.map_form_fields(fields, ProfileContext())
+
+
+def test_map_form_fields_raises_when_unparsed():
+    fake_client = MagicMock()
+    fake_client.messages.parse.return_value = _fake_response(parsed_output=None)
+    provider = AnthropicProvider()
+    fields = [FormFieldDescriptor(index=0, type="text", label="City")]
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        with pytest.raises(ValueError, match="parseable"):
+            provider.map_form_fields(fields, ProfileContext())
 
 
 def test_get_client_is_lazily_constructed_and_cached(monkeypatch):

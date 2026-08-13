@@ -4,17 +4,26 @@ from __future__ import annotations
 import os
 
 import anthropic
+from pydantic import BaseModel
 
-from models import ExtractionResult, MatchResult, ProfileContext
+from models import ExtractionResult, FieldMapping, FormFieldDescriptor, MatchResult, ProfileContext
 from providers.base import (
     FORM_ANSWER_SYSTEM_PROMPT,
+    MAP_FORM_FIELDS_SYSTEM_PROMPT,
     MATCH_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
+    format_form_fields,
     format_profile,
     LLMProvider,
 )
 
 MODEL = "claude-opus-5"
+
+
+class _FieldMappingBatch(BaseModel):
+    """Wrapper so Claude's structured output can return a list of mappings."""
+
+    mappings: list[FieldMapping]
 
 
 class AnthropicProvider(LLMProvider):
@@ -77,3 +86,27 @@ class AnthropicProvider(LLMProvider):
             raise ValueError("Claude did not return a parseable match result")
 
         return response.parsed_output
+
+    def map_form_fields(
+        self, fields: list[FormFieldDescriptor], profile: ProfileContext
+    ) -> list[FieldMapping]:
+        if not fields:
+            return []
+
+        response = self.get_client().messages.parse(
+            model=MODEL,
+            max_tokens=2048,
+            system=MAP_FORM_FIELDS_SYSTEM_PROMPT.format(
+                profile=format_profile(profile), fields=format_form_fields(fields)
+            ),
+            messages=[{"role": "user", "content": "Map the fields above."}],
+            output_format=_FieldMappingBatch,
+        )
+
+        if response.stop_reason == "refusal":
+            raise ValueError("Claude declined to map these fields")
+        if response.parsed_output is None:
+            raise ValueError("Claude did not return a parseable field mapping result")
+
+        valid_indices = {field.index for field in fields}
+        return [mapping for mapping in response.parsed_output.mappings if mapping.index in valid_indices]

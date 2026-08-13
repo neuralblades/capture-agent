@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from models import ExtractionResult, MatchResult, ProfileContext
+from models import ExtractionResult, FormFieldDescriptor, FormFieldOption, MatchResult, ProfileContext
 from providers.groq_provider import GroqProvider
 
 
@@ -247,6 +247,57 @@ def test_calculate_match_raises_when_json_does_not_match_schema():
     with patch.object(provider, "get_client", return_value=fake_client):
         with pytest.raises(ValueError, match="parseable"):
             provider.calculate_match("content", "resume")
+
+
+def test_map_form_fields_returns_empty_for_no_fields():
+    provider = GroqProvider()
+    assert provider.map_form_fields([], ProfileContext()) == []
+
+
+def test_map_form_fields_parses_and_filters_to_known_indices():
+    fields = [
+        FormFieldDescriptor(
+            index=0,
+            type="radio-group",
+            label="Authorized to work?",
+            options=[FormFieldOption(value="opt-yes", label="Yes"), FormFieldOption(value="opt-no", label="No")],
+        ),
+    ]
+    payload = {"mappings": [{"index": 0, "value": "opt-yes"}, {"index": 99, "value": "should be dropped"}]}
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(content=json.dumps(payload))
+    provider = GroqProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        mappings = provider.map_form_fields(fields, ProfileContext(work_authorized=True))
+
+    assert [m.index for m in mappings] == [0]
+    assert mappings[0].value == "opt-yes"
+    _, kwargs = fake_client.chat.completions.create.call_args
+    assert kwargs["response_format"] == {"type": "json_object"}
+    assert "Authorized to work?" in kwargs["messages"][0]["content"]
+
+
+def test_map_form_fields_raises_on_content_filter():
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(finish_reason="content_filter")
+    provider = GroqProvider()
+    fields = [FormFieldDescriptor(index=0, type="text", label="City")]
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        with pytest.raises(ValueError, match="declined"):
+            provider.map_form_fields(fields, ProfileContext())
+
+
+def test_map_form_fields_raises_on_invalid_json():
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(content="not json")
+    provider = GroqProvider()
+    fields = [FormFieldDescriptor(index=0, type="text", label="City")]
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        with pytest.raises(ValueError, match="parseable"):
+            provider.map_form_fields(fields, ProfileContext())
 
 
 def test_get_client_is_lazily_constructed_and_cached(monkeypatch):

@@ -55,7 +55,7 @@ class ExtractionResult(BaseModel):
 
 class ProfileContext(BaseModel):
     """Applicant profile stored in the extension (chrome.storage.local) and sent
-    along with a form-answer request to tailor the generated response."""
+    along with a form-answer/field-mapping request to tailor the generated response."""
 
     full_name: Optional[str] = Field(None, description="Applicant's full name")
     email: Optional[str] = Field(None, description="Applicant's email address")
@@ -63,6 +63,18 @@ class ProfileContext(BaseModel):
     linkedin_url: Optional[str] = Field(None, description="Applicant's LinkedIn profile URL")
     github_url: Optional[str] = Field(None, description="Applicant's GitHub profile URL")
     resume_text: Optional[str] = Field(None, description="Plain-text resume/CV content")
+    work_authorized: Optional[bool] = Field(
+        None, description="Whether the applicant is authorized to work without sponsorship"
+    )
+    veteran_status: Optional[str] = Field(
+        None, description="Applicant's own wording for veteran-status screening questions, e.g. 'I am not a protected veteran'"
+    )
+    disability_status: Optional[str] = Field(
+        None, description="Applicant's own wording for disability-status screening questions"
+    )
+    ethnicity: Optional[str] = Field(
+        None, description="Applicant's own wording for race/ethnicity EEO screening questions"
+    )
 
 
 class FormAnswerRequest(BaseModel):
@@ -78,6 +90,52 @@ class FormAnswerResponse(BaseModel):
     """A generated answer for an open-ended form question."""
 
     answer: str = Field(..., description="Tailored answer text to inject into the form field")
+
+
+FormFieldType = Literal["text", "textarea", "select", "radio-group", "checkbox-group"]
+
+
+class FormFieldOption(BaseModel):
+    """A single selectable choice for a select/radio-group/checkbox-group field."""
+
+    value: str = Field(..., description="The option's underlying value/id, to be echoed back in a mapping")
+    label: str = Field(..., description="The option's human-readable text")
+
+
+class FormFieldDescriptor(BaseModel):
+    """One field the extension's universal autofill engine could not confidently
+    fill via local heuristics, sent to the AI mapper as a fallback."""
+
+    index: int = Field(..., description="Position in the request's fields list; echoed back in the mapping")
+    type: FormFieldType
+    label: str = Field("", description="Best-effort question/label text resolved for this field")
+    name: Optional[str] = Field(None, description="The field's HTML name attribute, if any")
+    placeholder: Optional[str] = Field(None, description="The field's placeholder text, if any")
+    options: list[FormFieldOption] = Field(
+        default_factory=list, description="Choices for select/radio-group/checkbox-group fields; empty for text/textarea"
+    )
+
+
+class MapFormFieldsRequest(BaseModel):
+    """A batch of ambiguous/custom form fields to map to profile values or generated answers."""
+
+    fields: list[FormFieldDescriptor] = Field(default_factory=list)
+    profile: ProfileContext = Field(default_factory=ProfileContext, description="Applicant profile used to map/generate values")
+
+
+class FieldMapping(BaseModel):
+    """The value to fill into one requested field."""
+
+    index: int = Field(..., description="Matches a FormFieldDescriptor.index from the request")
+    value: str = Field(
+        ..., description="For text/textarea, the generated answer text. For select/radio-group/checkbox-group, one of that field's option values."
+    )
+
+
+class MapFormFieldsResponse(BaseModel):
+    """Field mappings for a batch of ambiguous/custom form fields."""
+
+    mappings: list[FieldMapping] = Field(default_factory=list)
 
 
 class PostRecord(BaseModel):

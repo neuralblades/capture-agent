@@ -10,8 +10,9 @@
     <main class="wrap">
       <h1>Your profile</h1>
       <p class="hint">
-        Used by the Google Forms autofill content script to fill in your standard fields and to
-        draft answers to open-ended questions. Stored locally in this browser only.
+        Used by the autofill content scripts (Google Forms, Lever, Greenhouse, Workday, Ashby) to
+        fill in your standard fields and to draft/map answers to open-ended and screening
+        questions. Stored locally in this browser only.
       </p>
 
       <form id="profile-form">
@@ -42,6 +43,47 @@
             rows="8"
             placeholder="Paste a plain-text version of your resume. Used as context for AI-drafted answers."
           ></textarea>
+        </label>
+        <label>
+          Resume file
+          <div class="file-row">
+            <input type="file" id="resumeFile" accept=".pdf,.doc,.docx" />
+            <span id="resumeFileName" class="file-name"></span>
+          </div>
+        </label>
+
+        <h2>Screening questions</h2>
+        <p class="hint">
+          Used by the ATS autofill engine (Lever/Greenhouse/Workday/Ashby) to answer standard
+          work-authorization and EEO questions. Leave blank to skip and answer those manually.
+        </p>
+        <label>
+          Authorized to work without sponsorship?
+          <select id="workAuthorized">
+            <option value="">Prefer not to answer automatically</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </label>
+        <label>
+          Veteran status
+          <input
+            type="text"
+            id="veteranStatus"
+            placeholder="e.g. I am not a protected veteran"
+          />
+        </label>
+        <label>
+          Disability status
+          <input
+            type="text"
+            id="disabilityStatus"
+            placeholder="e.g. I do not have a disability"
+          />
+        </label>
+        <label>
+          Race/ethnicity
+          <input type="text" id="ethnicity" placeholder="e.g. Prefer not to say" />
         </label>
 
         <div class="actions">

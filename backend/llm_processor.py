@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from models import ExtractionResult, MatchResult, ProfileContext
+from models import ExtractionResult, FieldMapping, FormFieldDescriptor, MatchResult, ProfileContext
 from providers import get_provider
 
 
@@ -26,3 +26,8 @@ def generate_form_answer(question: str, profile: ProfileContext) -> str:
 def calculate_match_score(content: str, resume_text: str) -> MatchResult:
     """Score how well an applicant's resume matches a captured post via the configured LLM provider."""
     return get_provider().calculate_match(content, resume_text)
+
+
+def map_form_fields(fields: list[FormFieldDescriptor], profile: ProfileContext) -> list[FieldMapping]:
+    """Map ambiguous/custom form fields to profile values or generated answers via the configured LLM provider."""
+    return get_provider().map_form_fields(fields, profile)

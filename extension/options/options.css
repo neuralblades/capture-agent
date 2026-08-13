@@ -58,7 +58,8 @@ label {
 }
 
 input,
-textarea {
+textarea,
+select {
   font: inherit;
   color: var(--text);
   background: var(--bg-elevated);
@@ -69,7 +70,8 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-dim);
 }
@@ -77,6 +79,26 @@ textarea:focus {
 textarea {
   resize: vertical;
   font-family: inherit;
+}
+
+h2 {
+  margin: 10px 0 -4px;
+  font-size: 13px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+}
+
+.file-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.file-name {
+  font-weight: 400;
+  color: var(--text-faint);
+  font-size: 12px;
 }
 
 .actions {

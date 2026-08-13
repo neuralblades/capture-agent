@@ -32,6 +32,18 @@
       "matches": ["https://docs.google.com/forms/*"],
       "js": ["extension/content/form_autofill.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://jobs.lever.co/*",
+        "https://jobs.eu.lever.co/*",
+        "https://boards.greenhouse.io/*",
+        "https://job-boards.greenhouse.io/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://jobs.ashbyhq.com/*"
+      ],
+      "js": ["extension/content/universal_autofill.js"],
+      "run_at": "document_idle"
     }
   ],
   "action": {
