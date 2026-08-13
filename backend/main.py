@@ -63,11 +63,16 @@ def health() -> dict[str, str]:
 
 @app.post("/capture", response_model=PostRecord)
 def capture_post(post: CapturedPost) -> PostRecord:
-    # Idempotent per URL: re-capturing the same tweet (e.g. clicking Capture
-    # again, or dismiss failing to clear a card) should return the existing
-    # record rather than paying for another LLM call and inserting a duplicate.
+    # Idempotent per (url, content): re-capturing the same source (e.g.
+    # clicking Capture again, or dismiss failing to clear a card) should
+    # return the existing record rather than paying for another LLM call and
+    # inserting a duplicate. Content is part of the key, not just url, because
+    # a web_selection capture's url is the page it was selected from -- the
+    # same page can yield many distinct selections that must not collapse
+    # into one post the way a tweet or LinkedIn post (one fixed url per post)
+    # naturally would.
     if post.url:
-        existing = database.get_post_by_url(post.url)
+        existing = database.get_post_by_url_and_content(post.url, post.content)
         if existing is not None:
             return PostRecord(**existing)
 

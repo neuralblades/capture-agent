@@ -76,6 +76,63 @@ def test_capture_returns_and_persists_external_url_and_contact_email(client):
     assert stored["action_type"] == "job_form"
 
 
+def test_capture_tags_web_selection_platform(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        resp = client.post(
+            "/capture",
+            json={
+                "platform": "web_selection",
+                "content": "Some highlighted text captured via the right-click menu.",
+                "url": "https://example.com/article",
+            },
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["platform"] == "web_selection"
+    assert body["author"] is None
+
+    get_resp = client.get(f"/posts/{body['id']}")
+    assert get_resp.json()["platform"] == "web_selection"
+
+
+def test_capture_web_selection_different_content_same_url_creates_separate_posts(client):
+    # web_selection's url is the page the text was highlighted on, not
+    # anything tied to the selection itself, so two different quotes pulled
+    # from the same page must not collide on the url-based dedupe check the
+    # way two captures of the same tweet/LinkedIn post correctly do.
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        first = client.post(
+            "/capture",
+            json={"platform": "web_selection", "content": "quote A", "url": "https://example.com/article"},
+        )
+        second = client.post(
+            "/capture",
+            json={"platform": "web_selection", "content": "quote B", "url": "https://example.com/article"},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["id"] != second.json()["id"]
+    assert len(client.get("/posts").json()) == 2
+
+
+def test_capture_web_selection_same_content_and_url_dedupes(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT) as mock_extract:
+        first = client.post(
+            "/capture",
+            json={"platform": "web_selection", "content": "quote A", "url": "https://example.com/article"},
+        )
+        second = client.post(
+            "/capture",
+            json={"platform": "web_selection", "content": "quote A", "url": "https://example.com/article"},
+        )
+
+    assert first.json()["id"] == second.json()["id"]
+    mock_extract.assert_called_once()
+    assert len(client.get("/posts").json()) == 1
+
+
 def test_capture_defaults_captured_at_when_omitted(client):
     with patch("main.extract_post_data", return_value=FAKE_RESULT) as mock_extract:
         resp = client.post(

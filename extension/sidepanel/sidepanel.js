@@ -173,6 +173,17 @@ function buildLinkInfo(urls) {
   return { applyUrl: links[0].url, links };
 }
 
+/** Maps a backend `platform` value to how it should read in the UI. */
+const PLATFORM_LABELS = {
+  twitter: "X",
+  linkedin: "LinkedIn",
+  web_selection: "Web",
+};
+
+function platformLabel(platform) {
+  return PLATFORM_LABELS[platform] || platform;
+}
+
 /**
  * Maps a backend PostRecord (see backend/models.py) to the CapturedItem shape
  * this UI renders. The backend doesn't classify posts as book/study_plan, so
@@ -190,7 +201,7 @@ function mapPostToItem(post) {
     title: post.summary || post.content,
     detail: deadline
       ? deadline.text
-      : [post.author, post.platform].filter(Boolean).join(" · "),
+      : [post.author, platformLabel(post.platform)].filter(Boolean).join(" · "),
     sourceUrl: post.url || "",
     createdAt: post.created_at,
     dueDate: deadline ? deadline.iso_date : null,

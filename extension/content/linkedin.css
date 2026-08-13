@@ -1,0 +1,54 @@
+/* Styling for the .capture-agent-btn injected on linkedin.com. Self-contained
+   (linkedin.js doesn't share content.css, which is x.com-specific), styled to
+   sit naturally alongside LinkedIn's own Like/Comment/Share action buttons. */
+
+.capture-agent-btn-linkedin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  margin-left: 4px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.6);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.capture-agent-btn-linkedin:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.9);
+}
+
+.capture-agent-btn-linkedin[data-capture-agent-state="loading"] {
+  color: #0a66c2;
+  cursor: default;
+}
+
+.capture-agent-btn-linkedin[data-capture-agent-state="success"] {
+  color: #ffffff;
+  background-color: #057642;
+}
+
+.capture-agent-btn-linkedin[data-capture-agent-state="error"] {
+  color: #b74700;
+}
+
+.capture-agent-btn-linkedin:disabled {
+  cursor: default;
+}
+
+.capture-agent-btn-linkedin-job {
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  border-radius: 18px;
+  font-size: 16px;
+}
