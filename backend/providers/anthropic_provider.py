@@ -5,8 +5,14 @@ import os
 
 import anthropic
 
-from models import ExtractionResult, ProfileContext
-from providers.base import FORM_ANSWER_SYSTEM_PROMPT, SYSTEM_PROMPT, format_profile, LLMProvider
+from models import ExtractionResult, MatchResult, ProfileContext
+from providers.base import (
+    FORM_ANSWER_SYSTEM_PROMPT,
+    MATCH_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    format_profile,
+    LLMProvider,
+)
 
 MODEL = "claude-opus-5"
 
@@ -55,3 +61,19 @@ class AnthropicProvider(LLMProvider):
             raise ValueError("Claude did not return an answer")
 
         return answer
+
+    def calculate_match(self, content: str, resume_text: str) -> MatchResult:
+        response = self.get_client().messages.parse(
+            model=MODEL,
+            max_tokens=1024,
+            system=MATCH_SYSTEM_PROMPT.format(resume_text=resume_text),
+            messages=[{"role": "user", "content": content}],
+            output_format=MatchResult,
+        )
+
+        if response.stop_reason == "refusal":
+            raise ValueError("Claude declined to score this match")
+        if response.parsed_output is None:
+            raise ValueError("Claude did not return a parseable match result")
+
+        return response.parsed_output

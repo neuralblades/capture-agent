@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from models import ExtractionResult, ProfileContext
+from models import ExtractionResult, MatchResult, ProfileContext
 from providers.groq_provider import GroqProvider
 
 
@@ -155,6 +155,63 @@ def test_generate_form_answer_raises_when_content_missing():
     with patch.object(provider, "get_client", return_value=fake_client):
         with pytest.raises(ValueError, match="did not return"):
             provider.generate_form_answer("Why?", ProfileContext())
+
+
+def test_calculate_match_parses_json_content_into_match_result():
+    payload = {"match_score": 85, "matching_skills": ["Python", "FastAPI"], "missing_skills": ["Docker"]}
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(content=json.dumps(payload))
+    provider = GroqProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        result = provider.calculate_match("We need Python, FastAPI, and Docker", "Experienced Python + FastAPI dev")
+
+    assert result == MatchResult(**payload)
+    _, kwargs = fake_client.chat.completions.create.call_args
+    assert kwargs["model"] == "llama-3.3-70b-versatile"
+    assert kwargs["response_format"] == {"type": "json_object"}
+    assert "Experienced Python + FastAPI dev" in kwargs["messages"][0]["content"]
+    assert kwargs["messages"][1]["content"] == "We need Python, FastAPI, and Docker"
+
+
+def test_calculate_match_raises_on_content_filter():
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(finish_reason="content_filter")
+    provider = GroqProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        with pytest.raises(ValueError, match="declined"):
+            provider.calculate_match("content", "resume")
+
+
+def test_calculate_match_raises_when_content_missing():
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(content=None)
+    provider = GroqProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        with pytest.raises(ValueError, match="parseable"):
+            provider.calculate_match("content", "resume")
+
+
+def test_calculate_match_raises_on_invalid_json():
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(content="not json")
+    provider = GroqProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        with pytest.raises(ValueError, match="parseable"):
+            provider.calculate_match("content", "resume")
+
+
+def test_calculate_match_raises_when_json_does_not_match_schema():
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_response(content=json.dumps({"foo": "bar"}))
+    provider = GroqProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        with pytest.raises(ValueError, match="parseable"):
+            provider.calculate_match("content", "resume")
 
 
 def test_get_client_is_lazily_constructed_and_cached(monkeypatch):

@@ -92,7 +92,29 @@ class PostRecord(BaseModel):
     external_url: Optional[str] = None
     contact_email: Optional[str] = None
     action_type: ActionType = "none"
+    match_score: Optional[int] = Field(
+        None, ge=0, le=100, description="Resume-to-post match score last computed via /calculate-match"
+    )
     created_at: str
+
+
+class CalculateMatchRequest(BaseModel):
+    """Request to score a captured post against an applicant's resume."""
+
+    post_id: int = Field(..., description="Id of a previously captured post to score against")
+    resume_text: str = Field(..., min_length=1, description="Applicant resume/CV text to compare against the post content")
+
+
+class MatchResult(BaseModel):
+    """Result of comparing a captured post against an applicant's resume."""
+
+    match_score: int = Field(..., ge=0, le=100, description="Overall match score between the resume and the post, 0-100")
+    matching_skills: list[str] = Field(
+        default_factory=list, description="Skills/requirements from the post that the resume already covers"
+    )
+    missing_skills: list[str] = Field(
+        default_factory=list, description="Skills/requirements mentioned in the post that the resume does not show"
+    )
 
 
 class GenerateEmailRequest(BaseModel):

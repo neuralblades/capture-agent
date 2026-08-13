@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from models import ExtractionResult, ProfileContext
+from models import ExtractionResult, MatchResult, ProfileContext
 
 SYSTEM_PROMPT = """You extract structured information from social media posts captured by a browser extension.
 
@@ -22,6 +22,17 @@ FORM_ANSWER_SYSTEM_PROMPT = """You write short, first-person answers to open-end
 
 Applicant profile:
 {profile}"""
+
+MATCH_SYSTEM_PROMPT = """You compare a captured job post against an applicant's resume and score how well they match.
+
+Read the job post and the resume below, then:
+- Compute an overall match_score from 0 to 100 reflecting how well the resume's skills and experience align with what the post is asking for. 100 means the resume is a near-perfect fit; 0 means there's no meaningful overlap.
+- List the specific skills/requirements mentioned in the post that the resume already demonstrates in matching_skills.
+- List the specific skills/requirements mentioned in the post that the resume does not show evidence of in missing_skills.
+If the post doesn't describe a job or role with identifiable requirements, still do your best to score general topical overlap.
+
+Resume:
+{resume_text}"""
 
 
 _PROFILE_LABELS = {
@@ -55,4 +66,9 @@ class LLMProvider(ABC):
     @abstractmethod
     def generate_form_answer(self, question: str, profile: ProfileContext) -> str:
         """Generate a tailored answer to an open-ended form question."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def calculate_match(self, content: str, resume_text: str) -> MatchResult:
+        """Score how well an applicant's resume matches a captured post's content."""
         raise NotImplementedError

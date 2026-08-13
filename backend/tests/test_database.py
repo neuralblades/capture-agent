@@ -42,6 +42,7 @@ def test_insert_and_get_post(isolated_db):
     assert record["external_url"] is None
     assert record["contact_email"] is None
     assert record["action_type"] == "none"
+    assert record["match_score"] is None
 
 
 def test_insert_and_get_post_with_action_fields(isolated_db):
@@ -74,6 +75,17 @@ def test_get_post_by_url_returns_most_recent_match(isolated_db):
 
 def test_get_post_by_url_returns_none_when_no_match(isolated_db):
     assert database.get_post_by_url("https://x.com/nope/status/1") is None
+
+
+def test_update_match_score_sets_score_and_returns_true(isolated_db):
+    post_id = _insert()
+
+    assert database.update_match_score(post_id, 85) is True
+    assert database.get_post(post_id)["match_score"] == 85
+
+
+def test_update_match_score_returns_false_when_missing(isolated_db):
+    assert database.update_match_score(99999, 85) is False
 
 
 def test_delete_post_removes_row_and_returns_true(isolated_db):
@@ -147,6 +159,7 @@ def test_init_db_migrates_legacy_table_missing_new_columns(tmp_path, monkeypatch
     assert record["action_type"] == "cold_email"
     assert record["contact_email"] == "a@b.com"
     assert record["external_url"] is None
+    assert record["match_score"] is None
 
 
 def test_init_db_is_idempotent_on_already_migrated_table(isolated_db):

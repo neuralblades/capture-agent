@@ -55,6 +55,7 @@ _COLUMN_MIGRATIONS: list[tuple[str, str]] = [
     ("external_url", "ALTER TABLE posts ADD COLUMN external_url TEXT"),
     ("contact_email", "ALTER TABLE posts ADD COLUMN contact_email TEXT"),
     ("action_type", "ALTER TABLE posts ADD COLUMN action_type TEXT NOT NULL DEFAULT 'none'"),
+    ("match_score", "ALTER TABLE posts ADD COLUMN match_score INTEGER"),
 ]
 
 
@@ -124,6 +125,7 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "external_url": row["external_url"],
         "contact_email": row["contact_email"],
         "action_type": row["action_type"],
+        "match_score": row["match_score"],
         "created_at": row["created_at"],
     }
 
@@ -157,4 +159,13 @@ def delete_post(post_id: int) -> bool:
     """Returns True if a row was deleted, False if post_id didn't exist."""
     with get_connection() as conn:
         cursor = conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+    return cursor.rowcount > 0
+
+
+def update_match_score(post_id: int, match_score: int) -> bool:
+    """Returns True if a row was updated, False if post_id didn't exist."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "UPDATE posts SET match_score = ? WHERE id = ?", (match_score, post_id)
+        )
     return cursor.rowcount > 0
