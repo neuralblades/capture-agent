@@ -42,12 +42,45 @@
     /^\d+\s*(h|d|w|mo|y)\s*(•|·)?\s*(edited)?\s*•?\s*$/i,
   ];
 
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
   /**
    * @param {Element|null} el
    * @returns {string}
    */
   function cleanText(el) {
     return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+  }
+
+  /**
+   * Same mark used for the idle icon on x.com -- kept identical so the two
+   * platforms read as the same product, and left in place across all button
+   * states here (unlike x.com's icon-only idle button) since the LinkedIn
+   * button always shows a text label.
+   *
+   * Built with the SVG DOM API rather than an innerHTML string: LinkedIn
+   * enforces a Trusted Types default policy that silently strips markup
+   * (including <svg>) out of any innerHTML assignment, so a string-based
+   * icon would just disappear here.
+   * @returns {SVGSVGElement}
+   */
+  function createCaptureIcon() {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'capture-agent-btn-linkedin-icon');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '14');
+    svg.setAttribute('height', '14');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+
+    const polygon = document.createElementNS(SVG_NS, 'polygon');
+    polygon.setAttribute('points', '13 2 3 14 12 14 11 22 21 10 12 10 13 2');
+    svg.appendChild(polygon);
+
+    return svg;
   }
 
   /**
@@ -58,9 +91,23 @@
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'capture-agent-btn capture-agent-btn-linkedin';
-    button.textContent = label;
+    button.appendChild(createCaptureIcon());
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'capture-agent-btn-linkedin-label';
+    labelSpan.textContent = label;
+    button.appendChild(labelSpan);
+
     button.setAttribute('data-capture-agent-state', 'idle');
     return button;
+  }
+
+  /**
+   * @param {HTMLButtonElement} button
+   * @param {string} text
+   */
+  function setButtonLabel(button, text) {
+    button.querySelector('.capture-agent-btn-linkedin-label').textContent = text;
   }
 
   /**
@@ -73,13 +120,13 @@
     if (!text || button.disabled) return;
 
     if (!chrome.runtime?.id) {
-      button.textContent = 'Refresh page to capture';
+      setButtonLabel(button, 'Refresh page to capture');
       button.setAttribute('data-capture-agent-state', 'error');
       return;
     }
 
     button.disabled = true;
-    button.textContent = 'Capturing...';
+    setButtonLabel(button, 'Capturing...');
     button.setAttribute('data-capture-agent-state', 'loading');
 
     chrome.runtime.sendMessage(
@@ -93,16 +140,16 @@
         const lastError = chrome.runtime.lastError;
         if (lastError || !response?.ok) {
           console.error('[CaptureAgent] LinkedIn capture failed', lastError?.message || response?.error);
-          button.textContent = 'Failed -- retry';
+          setButtonLabel(button, 'Failed -- retry');
           button.setAttribute('data-capture-agent-state', 'error');
           button.disabled = false;
           return;
         }
 
-        button.textContent = '✓ Captured';
+        setButtonLabel(button, '✓ Captured');
         button.setAttribute('data-capture-agent-state', 'success');
         setTimeout(() => {
-          button.textContent = idleLabel;
+          setButtonLabel(button, idleLabel);
           button.setAttribute('data-capture-agent-state', 'idle');
           button.disabled = false;
         }, RESET_DELAY_MS);
