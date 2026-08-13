@@ -58,6 +58,14 @@ def health() -> dict[str, str]:
 
 @app.post("/capture", response_model=PostRecord)
 def capture_post(post: CapturedPost) -> PostRecord:
+    # Idempotent per URL: re-capturing the same tweet (e.g. clicking Capture
+    # again, or dismiss failing to clear a card) should return the existing
+    # record rather than paying for another LLM call and inserting a duplicate.
+    if post.url:
+        existing = database.get_post_by_url(post.url)
+        if existing is not None:
+            return PostRecord(**existing)
+
     captured_at = post.captured_at or datetime.now(timezone.utc)
 
     try:
@@ -107,6 +115,12 @@ def get_post(post_id: int) -> PostRecord:
     if record is None:
         raise HTTPException(status_code=404, detail="Post not found")
     return PostRecord(**record)
+
+
+@app.delete("/posts/{post_id}", status_code=204)
+def delete_post(post_id: int) -> None:
+    if not database.delete_post(post_id):
+        raise HTTPException(status_code=404, detail="Post not found")
 
 
 @app.post("/generate-email", response_model=GeneratedEmail)

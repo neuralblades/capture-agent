@@ -403,6 +403,7 @@ async function runAction(item, action, triggerEl) {
     type: MessageType.RUN_ACTION,
     action,
     itemId: item.id,
+    postId: item.postId,
   });
   triggerEl.disabled = false;
 

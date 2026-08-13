@@ -141,3 +141,20 @@ def get_post(post_id: int) -> Optional[dict[str, Any]]:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM posts WHERE id = ?", (post_id,)).fetchone()
     return row_to_dict(row) if row else None
+
+
+def get_post_by_url(url: str) -> Optional[dict[str, Any]]:
+    """Most recent post captured from this URL, if any -- used to make /capture
+    idempotent for the same tweet instead of inserting a duplicate row."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM posts WHERE url = ? ORDER BY id DESC LIMIT 1", (url,)
+        ).fetchone()
+    return row_to_dict(row) if row else None
+
+
+def delete_post(post_id: int) -> bool:
+    """Returns True if a row was deleted, False if post_id didn't exist."""
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+    return cursor.rowcount > 0

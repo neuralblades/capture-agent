@@ -120,6 +120,51 @@ def test_get_missing_post_returns_404(client):
     assert resp.status_code == 404
 
 
+def test_capture_same_url_twice_returns_existing_post_without_reextracting(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT) as mock_extract:
+        first = client.post(
+            "/capture",
+            json={"platform": "twitter", "content": "original text", "url": "https://x.com/a/status/1"},
+        )
+        second = client.post(
+            "/capture",
+            json={"platform": "twitter", "content": "original text", "url": "https://x.com/a/status/1"},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["id"] == second.json()["id"]
+    mock_extract.assert_called_once()
+
+    assert len(client.get("/posts").json()) == 1
+
+
+def test_capture_without_url_does_not_dedupe(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        first = client.post("/capture", json={"platform": "twitter", "content": "no url here"})
+        second = client.post("/capture", json={"platform": "twitter", "content": "no url here"})
+
+    assert first.json()["id"] != second.json()["id"]
+    assert len(client.get("/posts").json()) == 2
+
+
+def test_delete_post_removes_it(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        create_resp = client.post("/capture", json={"platform": "twitter", "content": "to be dismissed"})
+    post_id = create_resp.json()["id"]
+
+    delete_resp = client.delete(f"/posts/{post_id}")
+    assert delete_resp.status_code == 204
+
+    assert client.get(f"/posts/{post_id}").status_code == 404
+    assert client.get("/posts").json() == []
+
+
+def test_delete_missing_post_returns_404(client):
+    resp = client.delete("/posts/999")
+    assert resp.status_code == 404
+
+
 def test_capture_detects_contact_email_in_content(client):
     with patch("main.extract_post_data", return_value=FAKE_RESULT):
         resp = client.post(

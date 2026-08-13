@@ -6,10 +6,12 @@
 const MESSAGE_TYPES = Object.freeze({
   CAPTURE_TWEET: 'CAPTURE_TWEET',
   GENERATE_FORM_ANSWER: 'GENERATE_FORM_ANSWER',
+  RUN_ACTION: 'RUN_ACTION',
 });
 
 const CAPTURE_ENDPOINT = 'http://localhost:8000/capture';
 const FORM_ANSWER_ENDPOINT = 'http://localhost:8000/generate-form-answer';
+const POSTS_ENDPOINT = 'http://localhost:8000/posts';
 
 // Runs every time the (non-persistent) service worker starts up. The setting
 // itself persists across restarts once made, but re-asserting it on every
@@ -85,6 +87,36 @@ async function generateFormAnswer(message) {
   return answer;
 }
 
+/**
+ * Deletes the underlying post from the backend so a dismissed card doesn't
+ * reappear on the next /posts refresh. A 404 (already gone) counts as
+ * success -- the sidepanel's goal is just "this id shouldn't be here anymore".
+ * @param {number} postId
+ * @returns {Promise<void>}
+ */
+async function dismissPost(postId) {
+  if (typeof postId !== 'number' || !Number.isFinite(postId)) {
+    throw new Error('Dismiss requires a numeric postId');
+  }
+
+  const response = await fetch(`${POSTS_ENDPOINT}/${postId}`, { method: 'DELETE' });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Dismiss request failed with status ${response.status}`);
+  }
+}
+
+/**
+ * @param {import('../sidepanel/contracts.js').RunActionRequest} message
+ * @returns {Promise<void>}
+ */
+async function runAction(message) {
+  if (message.action === 'dismiss') {
+    await dismissPost(message.postId);
+    return;
+  }
+  throw new Error(`Unsupported action: ${message.action}`);
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message) {
     return false;
@@ -108,6 +140,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then((answer) => sendResponse({ ok: true, answer }))
       .catch((error) => {
         console.error('[CaptureAgent] Form answer generation failed', error);
+        sendResponse({ ok: false, error: error.message });
+      });
+
+    return true;
+  }
+
+  if (message.type === MESSAGE_TYPES.RUN_ACTION) {
+    runAction(message)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => {
+        console.error('[CaptureAgent] Action failed', error);
         sendResponse({ ok: false, error: error.message });
       });
 
