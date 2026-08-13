@@ -88,6 +88,21 @@ def test_update_match_score_returns_false_when_missing(isolated_db):
     assert database.update_match_score(99999, 85) is False
 
 
+def test_get_post_by_url_and_content_returns_most_recent_exact_match(isolated_db):
+    _insert(url="https://example.com/article", content="first capture")
+    second_id = _insert(url="https://example.com/article", content="first capture")
+
+    record = database.get_post_by_url_and_content("https://example.com/article", "first capture")
+    assert record is not None
+    assert record["id"] == second_id
+
+
+def test_get_post_by_url_and_content_does_not_match_different_content_at_same_url(isolated_db):
+    _insert(url="https://example.com/article", content="quote A")
+
+    assert database.get_post_by_url_and_content("https://example.com/article", "quote B") is None
+
+
 def test_delete_post_removes_row_and_returns_true(isolated_db):
     post_id = _insert()
 

@@ -151,8 +151,7 @@ def get_post(post_id: int) -> Optional[dict[str, Any]]:
 
 
 def get_post_by_url(url: str) -> Optional[dict[str, Any]]:
-    """Most recent post captured from this URL, if any -- used to make /capture
-    idempotent for the same tweet instead of inserting a duplicate row."""
+    """Most recent post captured from this URL, if any."""
     with get_connection() as conn:
         row = conn.execute(
             "SELECT * FROM posts WHERE url = ? ORDER BY id DESC LIMIT 1", (url,)
@@ -173,6 +172,21 @@ def category_counts() -> list[dict[str, Any]]:
             "SELECT category AS name, COUNT(*) AS count FROM posts GROUP BY category ORDER BY count DESC, name ASC"
         ).fetchall()
     return [{"name": "All", "count": total}] + [{"name": row["name"], "count": row["count"]} for row in rows]
+
+
+def get_post_by_url_and_content(url: str, content: str) -> Optional[dict[str, Any]]:
+    """Most recent post with this exact (url, content) pair, if any -- used to
+    make /capture idempotent for a re-capture of the same source. Matching on
+    url alone isn't enough: a tweet or LinkedIn post has one fixed url per
+    piece of content, but a web_selection capture's url is just the page it
+    was selected from, so two different highlighted passages from the same
+    page share a url and must not be collapsed into one post."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM posts WHERE url = ? AND content = ? ORDER BY id DESC LIMIT 1",
+            (url, content),
+        ).fetchone()
+    return row_to_dict(row) if row else None
 
 
 def delete_post(post_id: int) -> bool:
