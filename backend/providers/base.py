@@ -9,6 +9,7 @@ SYSTEM_PROMPT = """You extract structured information from social media posts ca
 
 For each post:
 - Write a one-sentence summary.
+- Assign a single, concise category that best captures what the post is about, as an open-ended 1-2 word phrase (e.g. "AI Tools", "Research", "Finance", "Career", "Deadlines"). Do not restrict yourself to a fixed list -- pick whatever category name most naturally fits the post's topic, using Title Case.
 - Assign a few short topical tags.
 - Find every deadline or time-sensitive commitment mentioned (e.g. "due Friday", "in 2 weeks", "by EOD tomorrow"). Resolve each relative phrase to an absolute date in ISO 8601 (YYYY-MM-DD) using the reference date below. If a phrase can't be confidently resolved, set iso_date to null and give it a low confidence.
 - Set action_required to true if the post implies the reader must do something (respond, submit, register, pay, attend).

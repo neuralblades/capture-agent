@@ -20,6 +20,7 @@ from llm_processor import calculate_match_score, extract_post_data, generate_for
 from models import (
     CalculateMatchRequest,
     CapturedPost,
+    CategoryCount,
     FormAnswerRequest,
     FormAnswerResponse,
     GenerateEmailRequest,
@@ -88,6 +89,7 @@ def capture_post(post: CapturedPost) -> PostRecord:
         external_url=extraction.external_url,
         contact_email=extraction.contact_email or find_contact_email(post.content),
         action_type=extraction.action_type,
+        category=extraction.category,
     )
 
     record = database.get_post(post_id)
@@ -119,6 +121,11 @@ def calculate_match(request: CalculateMatchRequest) -> MatchResult:
 
     database.update_match_score(request.post_id, result.match_score)
     return result
+
+
+@app.get("/categories", response_model=list[CategoryCount])
+def get_categories() -> list[CategoryCount]:
+    return [CategoryCount(**row) for row in database.category_counts()]
 
 
 @app.get("/posts", response_model=list[PostRecord])

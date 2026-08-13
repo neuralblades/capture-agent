@@ -63,6 +63,7 @@ export const MessageType = Object.freeze({
  * @property {number|null} [matchScore] Resume-to-post match score (0-100) from POST /calculate-match, if computed.
  * @property {string[]} [matchingSkills] Skills from the post the resume already covers, from the last match calculation.
  * @property {string[]} [missingSkills] Skills from the post the resume doesn't show, from the last match calculation.
+ * @property {string} category         Open-ended category assigned by the backend (e.g. "AI Tools"), or "General".
  */
 
 /**
@@ -76,6 +77,12 @@ export const MessageType = Object.freeze({
  * @property {number} matchScore
  * @property {string[]} matchingSkills
  * @property {string[]} missingSkills
+ */
+
+/**
+ * @typedef {Object} CategoryCount
+ * @property {string} name   Category name, or "All" for the total across every post.
+ * @property {number} count  Number of stored posts in this category.
  */
 
 /**
@@ -122,14 +129,6 @@ export const MessageType = Object.freeze({
  * @property {"ITEMS_UPDATED"} type
  * @property {CapturedItem[]} items
  */
-
-/** Tabs shown in the sidepanel UI, in display order. */
-export const TABS = Object.freeze([
-  { id: "all", label: "All" },
-  { id: ItemType.DEADLINE, label: "Deadlines" },
-  { id: ItemType.BOOK, label: "Books" },
-  { id: ItemType.STUDY_PLAN, label: "Study Plans" },
-]);
 
 /** Action buttons available per item type, in display order. */
 export const ACTIONS_BY_TYPE = Object.freeze({
