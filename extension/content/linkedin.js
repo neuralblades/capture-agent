@@ -183,7 +183,23 @@
     topCard.setAttribute(INJECTED_ATTR, 'true');
   }
 
+  let observer = null;
+
   function scan() {
+    // The extension can be reloaded/updated while this content script is
+    // still attached to an open LinkedIn tab, orphaning it: chrome.runtime
+    // no longer has an id, and any chrome.* call throws or resolves against
+    // a dead context (surfacing as chrome-extension://invalid/ requests in
+    // the network log). Bail out of DOM injection and stop the observer so
+    // an orphaned script doesn't keep scanning the feed forever.
+    if (!chrome.runtime?.id) {
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+      return;
+    }
+
     document.querySelectorAll(FEED_POST_SELECTOR).forEach(injectIntoFeedPost);
     injectIntoJobTopCard();
   }
@@ -195,11 +211,14 @@
   }
 
   function init() {
+    if (!chrome.runtime?.id) return;
+
     scan();
     // LinkedIn is a client-routed SPA: feed posts stream in via virtualized
     // scroll and job detail panes swap in without a full navigation, so a
     // single pass at document_idle isn't enough -- rescan on DOM mutations.
-    new MutationObserver(scheduleScan).observe(document.body, { childList: true, subtree: true });
+    observer = new MutationObserver(scheduleScan);
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
   if (document.readyState === 'loading') {
