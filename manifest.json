@@ -12,6 +12,7 @@
   "side_panel": {
     "default_path": "extension/sidepanel/sidepanel.html"
   },
+  "options_page": "extension/options/options.html",
   "content_scripts": [
     {
       "matches": ["https://x.com/*", "https://twitter.com/*"],

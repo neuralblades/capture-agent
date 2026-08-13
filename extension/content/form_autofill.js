@@ -251,6 +251,15 @@
       childList: true,
       subtree: true,
     });
+
+    // If the profile is saved (or edited) via the options page *while* a
+    // form tab is already open, rescan immediately instead of leaving the
+    // page unfilled until the user reloads it.
+    chrome.storage.onChanged?.addListener((changes, area) => {
+      if (area === 'local' && PROFILE_STORAGE_KEY in changes) {
+        scheduleAutofillPass();
+      }
+    });
   }
 
   if (document.readyState === 'loading') {
