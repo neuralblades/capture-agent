@@ -2,6 +2,9 @@ import { TABS, ACTIONS_BY_TYPE, ActionType, MessageType, ItemType, ItemStatus } 
 
 const BACKEND_POSTS_URL = "http://localhost:8000/posts";
 const BACKEND_GENERATE_EMAIL_URL = "http://localhost:8000/generate-email";
+const BACKEND_CALCULATE_MATCH_URL = "http://localhost:8000/calculate-match";
+// Written by extension/options/options.js and read by extension/content/form_autofill.js.
+const PROFILE_STORAGE_KEY = "profile";
 
 /** Sample data used only when no extension runtime is present (e.g. previewing the HTML directly). */
 const SAMPLE_ITEMS = [
@@ -17,6 +20,9 @@ const SAMPLE_ITEMS = [
     contactEmail: "grants@edu-example.org",
     applyUrl: "https://docs.google.com/forms/d/e/sample-scholarship-form/viewform",
     links: [{ url: "https://docs.google.com/forms/d/e/sample-scholarship-form/viewform", label: "Google Form" }],
+    matchScore: 85,
+    matchingSkills: ["Python", "FastAPI"],
+    missingSkills: ["Docker"],
   },
   {
     id: "sample-2",
@@ -37,6 +43,7 @@ const SAMPLE_ITEMS = [
     createdAt: new Date().toISOString(),
     dueDate: null,
     status: ItemStatus.NEW,
+    matchScore: 42,
   },
 ];
 
@@ -47,6 +54,7 @@ const state = {
   activeTab: "all",
   query: "",
   items: [],
+  sortByMatch: false,
 };
 
 const els = {
@@ -55,7 +63,21 @@ const els = {
   emptyState: document.getElementById("empty-state"),
   search: document.getElementById("search-input"),
   toast: document.getElementById("toast"),
+  sortMatchBtn: document.getElementById("sort-match-btn"),
 };
+
+/** @returns {Promise<Record<string, unknown>>} Profile written by extension/options. */
+function getProfile() {
+  return new Promise((resolve) => {
+    if (!hasExtensionRuntime || !chrome.storage?.local) {
+      resolve({});
+      return;
+    }
+    chrome.storage.local.get(PROFILE_STORAGE_KEY, (result) => {
+      resolve(result[PROFILE_STORAGE_KEY] || {});
+    });
+  });
+}
 
 function sendMessage(message) {
   if (!hasExtensionRuntime) {
@@ -169,6 +191,9 @@ function mapPostToItem(post) {
     contactEmail: post.contact_email || null,
     applyUrl,
     links,
+    matchScore: typeof post.match_score === "number" ? post.match_score : null,
+    matchingSkills: [],
+    missingSkills: [],
   };
 }
 
@@ -181,15 +206,46 @@ async function loadPosts() {
     const posts = await response.json();
     state.items = Array.isArray(posts) ? posts.map(mapPostToItem) : [];
     render();
+    // Fire-and-forget: scores trickle in and each re-render as it resolves,
+    // rather than blocking the initial list paint on N LLM calls.
+    calculateMatchScores();
   } catch (error) {
     console.error("[CaptureAgent] Failed to load posts", error);
     showToast("Couldn't load captures", true);
   }
 }
 
+/** Scores every item that doesn't yet have a match score against the stored resume, if any. */
+async function calculateMatchScores() {
+  const profile = await getProfile();
+  const resumeText = (profile.resumeText || "").trim();
+  if (!resumeText) return;
+
+  const pending = state.items.filter((item) => item.postId != null && item.matchScore == null);
+  await Promise.all(pending.map((item) => calculateMatchForItem(item, resumeText)));
+}
+
+async function calculateMatchForItem(item, resumeText) {
+  try {
+    const response = await fetch(BACKEND_CALCULATE_MATCH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ post_id: item.postId, resume_text: resumeText }),
+    });
+    if (!response.ok) return;
+    const result = await response.json();
+    item.matchScore = result.match_score;
+    item.matchingSkills = result.matching_skills || [];
+    item.missingSkills = result.missing_skills || [];
+    renderList();
+  } catch (error) {
+    console.error("[CaptureAgent] Match calculation failed", error);
+  }
+}
+
 function filteredItems() {
   const q = state.query.trim().toLowerCase();
-  return state.items.filter((item) => {
+  const items = state.items.filter((item) => {
     if (state.activeTab !== "all" && item.type !== state.activeTab) return false;
     if (item.status === ItemStatus.ARCHIVED) return false;
     if (!q) return true;
@@ -197,6 +253,13 @@ function filteredItems() {
       item.title.toLowerCase().includes(q) || item.detail.toLowerCase().includes(q)
     );
   });
+
+  if (state.sortByMatch) {
+    // Unscored items (null) sort after every scored item, regardless of tie-breaking order.
+    items.sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
+  }
+
+  return items;
 }
 
 function countsByTab() {
@@ -262,6 +325,29 @@ function actionsForItem(item) {
   return actions;
 }
 
+/** Threshold-based color tier for a resume match score, matching the pill legend (🟢/🟡/🔴). */
+function matchTier(score) {
+  if (score >= 75) return "high";
+  if (score >= 50) return "medium";
+  return "low";
+}
+
+function matchEmoji(score) {
+  if (score >= 75) return "🟢";
+  if (score >= 50) return "🟡";
+  return "🔴";
+}
+
+function buildMatchPill(item) {
+  const pill = document.createElement("span");
+  pill.className = `match-pill ${matchTier(item.matchScore)}`;
+  pill.textContent = `${matchEmoji(item.matchScore)} ${item.matchScore}% Match`;
+  if (item.missingSkills && item.missingSkills.length > 0) {
+    pill.title = `Missing: ${item.missingSkills.join(", ")}`;
+  }
+  return pill;
+}
+
 function renderList() {
   const items = filteredItems();
   els.list.innerHTML = "";
@@ -311,6 +397,11 @@ function renderList() {
     }
 
     head.appendChild(body);
+
+    if (typeof item.matchScore === "number") {
+      head.appendChild(buildMatchPill(item));
+    }
+
     card.appendChild(head);
 
     const actions = document.createElement("div");
@@ -434,6 +525,12 @@ function render() {
   renderTabs();
   renderList();
 }
+
+els.sortMatchBtn.addEventListener("click", () => {
+  state.sortByMatch = !state.sortByMatch;
+  els.sortMatchBtn.setAttribute("aria-pressed", String(state.sortByMatch));
+  renderList();
+});
 
 let searchDebounce = null;
 els.search.addEventListener("input", (e) => {

@@ -7,8 +7,14 @@ import os
 from groq import Groq
 from pydantic import ValidationError
 
-from models import ExtractionResult, ProfileContext
-from providers.base import FORM_ANSWER_SYSTEM_PROMPT, SYSTEM_PROMPT, format_profile, LLMProvider
+from models import ExtractionResult, MatchResult, ProfileContext
+from providers.base import (
+    FORM_ANSWER_SYSTEM_PROMPT,
+    MATCH_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    format_profile,
+    LLMProvider,
+)
 
 MODEL = "llama-3.3-70b-versatile"
 
@@ -25,6 +31,15 @@ Respond with ONLY a single JSON object (no surrounding text or markdown) of this
   "external_url": string | null,
   "contact_email": string | null,
   "action_type": "job_form" | "cold_email" | "general_link" | "none"
+}"""
+
+MATCH_JSON_INSTRUCTIONS = """
+
+Respond with ONLY a single JSON object (no surrounding text or markdown) of this shape:
+{
+  "match_score": number between 0 and 100,
+  "matching_skills": [string, ...],
+  "missing_skills": [string, ...]
 }"""
 
 
@@ -85,3 +100,28 @@ class GroqProvider(LLMProvider):
             raise ValueError("Groq did not return an answer")
 
         return answer.strip()
+
+    def calculate_match(self, content: str, resume_text: str) -> MatchResult:
+        system_prompt = MATCH_SYSTEM_PROMPT.format(resume_text=resume_text) + MATCH_JSON_INSTRUCTIONS
+
+        response = self.get_client().chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content},
+            ],
+            response_format={"type": "json_object"},
+        )
+
+        choice = response.choices[0]
+        if choice.finish_reason == "content_filter":
+            raise ValueError("Groq declined to score this match")
+
+        raw = choice.message.content
+        if not raw:
+            raise ValueError("Groq did not return a parseable match result")
+
+        try:
+            return MatchResult.model_validate(json.loads(raw))
+        except (json.JSONDecodeError, ValidationError) as exc:
+            raise ValueError("Groq did not return a parseable match result") from exc

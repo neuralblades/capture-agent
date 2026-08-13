@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import llm_processor
-from models import Deadline, ExtractionResult
+from models import Deadline, ExtractionResult, MatchResult
 
 
 def test_extract_post_data_delegates_to_configured_provider_with_resolved_reference_date():
@@ -45,3 +45,25 @@ def test_extract_post_data_propagates_provider_errors():
     with patch("llm_processor.get_provider", return_value=fake_provider):
         with pytest.raises(ValueError, match="declined"):
             llm_processor.extract_post_data("some content")
+
+
+def test_calculate_match_score_delegates_to_configured_provider():
+    expected = MatchResult(match_score=85, matching_skills=["Python"], missing_skills=["Docker"])
+    fake_provider = MagicMock()
+    fake_provider.calculate_match.return_value = expected
+
+    with patch("llm_processor.get_provider", return_value=fake_provider) as get_provider:
+        result = llm_processor.calculate_match_score("job content", "resume text")
+
+    assert result == expected
+    get_provider.assert_called_once_with()
+    fake_provider.calculate_match.assert_called_once_with("job content", "resume text")
+
+
+def test_calculate_match_score_propagates_provider_errors():
+    fake_provider = MagicMock()
+    fake_provider.calculate_match.side_effect = ValueError("declined")
+
+    with patch("llm_processor.get_provider", return_value=fake_provider):
+        with pytest.raises(ValueError, match="declined"):
+            llm_processor.calculate_match_score("job content", "resume text")

@@ -1,7 +1,7 @@
 from datetime import datetime
 from unittest.mock import patch
 
-from models import Deadline, ExtractionResult, GeneratedEmail
+from models import Deadline, ExtractionResult, GeneratedEmail, MatchResult
 
 FAKE_RESULT = ExtractionResult(
     summary="Team asks for feedback on the new design by Friday.",
@@ -49,6 +49,7 @@ def test_capture_persists_and_returns_extraction(client):
     assert body["external_url"] is None
     assert body["contact_email"] is None
     assert body["action_type"] == "none"
+    assert body["match_score"] is None
 
 
 def test_capture_returns_and_persists_external_url_and_contact_email(client):
@@ -276,3 +277,60 @@ def test_generate_form_answer_returns_502_on_failure(client):
 
     assert resp.status_code == 502
     assert "boom" in resp.json()["detail"]
+
+
+FAKE_MATCH_RESULT = MatchResult(match_score=85, matching_skills=["Python", "FastAPI"], missing_skills=["Docker"])
+
+
+def test_calculate_match_returns_score_and_persists_it(client):
+    with patch("main.extract_post_data", return_value=FAKE_JOB_RESULT):
+        create_resp = client.post(
+            "/capture",
+            json={"platform": "twitter", "content": "We're hiring a Python + FastAPI + Docker engineer"},
+        )
+    post_id = create_resp.json()["id"]
+
+    with patch("main.calculate_match_score", return_value=FAKE_MATCH_RESULT) as mock_calculate:
+        resp = client.post(
+            "/calculate-match",
+            json={"post_id": post_id, "resume_text": "Experienced Python and FastAPI developer"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "match_score": 85,
+        "matching_skills": ["Python", "FastAPI"],
+        "missing_skills": ["Docker"],
+    }
+    args, _ = mock_calculate.call_args
+    assert "Python + FastAPI + Docker" in args[0]
+    assert args[1] == "Experienced Python and FastAPI developer"
+
+    stored = client.get(f"/posts/{post_id}").json()
+    assert stored["match_score"] == 85
+
+
+def test_calculate_match_returns_404_for_missing_post(client):
+    resp = client.post("/calculate-match", json={"post_id": 999, "resume_text": "resume"})
+    assert resp.status_code == 404
+
+
+def test_calculate_match_requires_non_empty_resume_text(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        create_resp = client.post("/capture", json={"platform": "twitter", "content": "content"})
+    post_id = create_resp.json()["id"]
+
+    resp = client.post("/calculate-match", json={"post_id": post_id, "resume_text": ""})
+    assert resp.status_code == 422
+
+
+def test_calculate_match_returns_502_on_failure(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        create_resp = client.post("/capture", json={"platform": "twitter", "content": "content"})
+    post_id = create_resp.json()["id"]
+
+    with patch("main.calculate_match_score", side_effect=RuntimeError("groq down")):
+        resp = client.post("/calculate-match", json={"post_id": post_id, "resume_text": "resume"})
+
+    assert resp.status_code == 502
+    assert "groq down" in resp.json()["detail"]

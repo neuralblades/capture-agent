@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from models import Deadline, ExtractionResult, ProfileContext
+from models import Deadline, ExtractionResult, MatchResult, ProfileContext
 from providers.anthropic_provider import AnthropicProvider
 
 
@@ -101,6 +101,43 @@ def test_generate_form_answer_raises_when_empty():
     with patch.object(provider, "get_client", return_value=fake_client):
         with pytest.raises(ValueError, match="did not return"):
             provider.generate_form_answer("Why?", ProfileContext())
+
+
+def test_calculate_match_returns_parsed_output_and_includes_resume():
+    expected = MatchResult(match_score=85, matching_skills=["Python"], missing_skills=["Docker"])
+    fake_client = MagicMock()
+    fake_client.messages.parse.return_value = _fake_response(parsed_output=expected)
+    provider = AnthropicProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        result = provider.calculate_match("We need a Python + Docker engineer", "Experienced Python developer")
+
+    assert result == expected
+    _, kwargs = fake_client.messages.parse.call_args
+    assert kwargs["model"] == "claude-opus-5"
+    assert "Experienced Python developer" in kwargs["system"]
+    assert kwargs["output_format"] is MatchResult
+    assert kwargs["messages"][0]["content"] == "We need a Python + Docker engineer"
+
+
+def test_calculate_match_raises_on_refusal():
+    fake_client = MagicMock()
+    fake_client.messages.parse.return_value = _fake_response(stop_reason="refusal")
+    provider = AnthropicProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        with pytest.raises(ValueError, match="declined"):
+            provider.calculate_match("content", "resume")
+
+
+def test_calculate_match_raises_when_unparsed():
+    fake_client = MagicMock()
+    fake_client.messages.parse.return_value = _fake_response(parsed_output=None)
+    provider = AnthropicProvider()
+
+    with patch.object(provider, "get_client", return_value=fake_client):
+        with pytest.raises(ValueError, match="parseable"):
+            provider.calculate_match("content", "resume")
 
 
 def test_get_client_is_lazily_constructed_and_cached(monkeypatch):

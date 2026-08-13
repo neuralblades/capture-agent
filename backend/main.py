@@ -16,13 +16,15 @@ from fastapi.middleware.cors import CORSMiddleware
 import database
 from contact_extractor import find_contact_email
 from email_generator import generate_cold_email
-from llm_processor import extract_post_data, generate_form_answer
+from llm_processor import calculate_match_score, extract_post_data, generate_form_answer
 from models import (
+    CalculateMatchRequest,
     CapturedPost,
     FormAnswerRequest,
     FormAnswerResponse,
     GenerateEmailRequest,
     GeneratedEmail,
+    MatchResult,
     PostRecord,
 )
 
@@ -102,6 +104,21 @@ def generate_form_answer_route(request: FormAnswerRequest) -> FormAnswerResponse
         raise HTTPException(status_code=502, detail=f"Answer generation failed: {exc}") from exc
 
     return FormAnswerResponse(answer=answer)
+
+
+@app.post("/calculate-match", response_model=MatchResult)
+def calculate_match(request: CalculateMatchRequest) -> MatchResult:
+    record = database.get_post(request.post_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    try:
+        result = calculate_match_score(record["content"], request.resume_text)
+    except Exception as exc:  # noqa: BLE001 - surface LLM/API failures as a 502, not a 500
+        raise HTTPException(status_code=502, detail=f"Match calculation failed: {exc}") from exc
+
+    database.update_match_score(request.post_id, result.match_score)
+    return result
 
 
 @app.get("/posts", response_model=list[PostRecord])

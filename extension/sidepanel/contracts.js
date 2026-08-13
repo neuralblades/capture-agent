@@ -60,6 +60,22 @@ export const MessageType = Object.freeze({
  *   present, the sidepanel renders a "Draft Email" action regardless of item type.
  * @property {string|null} [applyUrl] External application/form URL extracted from the post, if any.
  * @property {{url: string, label: string}[]} [links] External links extracted from the post, for display as pills.
+ * @property {number|null} [matchScore] Resume-to-post match score (0-100) from POST /calculate-match, if computed.
+ * @property {string[]} [matchingSkills] Skills from the post the resume already covers, from the last match calculation.
+ * @property {string[]} [missingSkills] Skills from the post the resume doesn't show, from the last match calculation.
+ */
+
+/**
+ * @typedef {Object} CalculateMatchRequest
+ * @property {number} postId
+ * @property {string} resumeText
+ */
+
+/**
+ * @typedef {Object} MatchResult
+ * @property {number} matchScore
+ * @property {string[]} matchingSkills
+ * @property {string[]} missingSkills
  */
 
 /**
