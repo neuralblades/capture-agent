@@ -76,7 +76,23 @@
    */
   function extractText(article) {
     const textNode = queryOwnFirst(article, SELECTORS.tweetText);
-    return textNode ? textNode.textContent.trim() : '';
+    if (!textNode) return '';
+
+    // X truncates the *visible* text of a long link inside a tweet with a
+    // trailing ellipsis (e.g. "docs.google.com/forms/d/e/…"), even though the
+    // anchor's href still holds the complete, real URL. Reading textContent
+    // directly would capture that truncated, unusable display text, so swap
+    // in the real href for any external link before flattening to text.
+    // Mentions/hashtags use relative hrefs ("/handle", "/hashtag/x") and are
+    // left as their visible text.
+    const clone = textNode.cloneNode(true);
+    clone.querySelectorAll('a[href]').forEach((anchor) => {
+      if (/^https?:\/\//i.test(anchor.getAttribute('href') || '')) {
+        anchor.textContent = anchor.href;
+      }
+    });
+
+    return clone.textContent.trim();
   }
 
   /**
