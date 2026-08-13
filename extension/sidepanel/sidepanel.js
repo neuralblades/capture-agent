@@ -301,7 +301,10 @@ function renderTabs() {
     btn.role = "tab";
     btn.dataset.tabId = category.name;
     btn.setAttribute("aria-selected", String(category.name === state.activeTab));
-    btn.innerHTML = `${category.name}<span class="tab-count">${category.count}</span>`;
+    btn.append(
+      document.createTextNode(category.name),
+      Object.assign(document.createElement("span"), { className: "tab-count", textContent: category.count })
+    );
     btn.addEventListener("click", () => {
       state.activeTab = category.name;
       render();
