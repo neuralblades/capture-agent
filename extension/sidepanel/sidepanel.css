@@ -291,6 +291,14 @@ body {
   padding: 24px;
 }
 
+/* `display: flex` above has the same specificity as the UA stylesheet's
+   `[hidden] { display: none }` and comes later in the cascade, so it wins
+   and the hidden attribute set from JS (els.emptyState.hidden = ...) would
+   otherwise be a no-op. Re-assert display: none explicitly when hidden. */
+.empty-state[hidden] {
+  display: none;
+}
+
 .empty-title {
   margin: 0;
   color: var(--text);
