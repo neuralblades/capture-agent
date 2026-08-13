@@ -6,11 +6,13 @@
 const MESSAGE_TYPES = Object.freeze({
   CAPTURE_TWEET: 'CAPTURE_TWEET',
   GENERATE_FORM_ANSWER: 'GENERATE_FORM_ANSWER',
+  MAP_FORM_FIELDS: 'MAP_FORM_FIELDS',
   RUN_ACTION: 'RUN_ACTION',
 });
 
 const CAPTURE_ENDPOINT = 'http://localhost:8000/capture';
 const FORM_ANSWER_ENDPOINT = 'http://localhost:8000/generate-form-answer';
+const MAP_FORM_FIELDS_ENDPOINT = 'http://localhost:8000/map-form-fields';
 const POSTS_ENDPOINT = 'http://localhost:8000/posts';
 
 // Runs every time the (non-persistent) service worker starts up. The setting
@@ -51,6 +53,21 @@ async function capturePost(message) {
 }
 
 /**
+ * Options page stores workAuthorized as the select's own string values
+ * ('yes'/'no'/'') since chrome.storage.local (and the DOM <select>) don't
+ * have a native tri-state boolean; the backend's ProfileContext wants a real
+ * boolean (or null when unanswered), so translate here at the one place that
+ * crosses that boundary.
+ * @param {'yes'|'no'|string|undefined} value
+ * @returns {boolean|null}
+ */
+function toBackendTriState(value) {
+  if (value === 'yes') return true;
+  if (value === 'no') return false;
+  return null;
+}
+
+/**
  * @param {Record<string, unknown>} profile - camelCase profile from chrome.storage.local
  * @returns {Record<string, unknown>} snake_case profile matching the backend's ProfileContext
  */
@@ -62,6 +79,10 @@ function toBackendProfile(profile) {
     linkedin_url: profile.linkedinUrl ?? null,
     github_url: profile.githubUrl ?? null,
     resume_text: profile.resumeText ?? null,
+    work_authorized: toBackendTriState(profile.workAuthorized),
+    veteran_status: profile.veteranStatus || null,
+    disability_status: profile.disabilityStatus || null,
+    ethnicity: profile.ethnicity || null,
   };
 }
 
@@ -85,6 +106,28 @@ async function generateFormAnswer(message) {
 
   const { answer } = await response.json();
   return answer;
+}
+
+/**
+ * @param {{ fields: Array<Record<string, unknown>>, profile?: Record<string, unknown> }} message
+ * @returns {Promise<Array<{index: number, value: string}>>}
+ */
+async function mapFormFields(message) {
+  const response = await fetch(MAP_FORM_FIELDS_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fields: message.fields || [],
+      profile: toBackendProfile(message.profile || {}),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Field mapping request failed with status ${response.status}`);
+  }
+
+  const { mappings } = await response.json();
+  return mappings;
 }
 
 /**
@@ -140,6 +183,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then((answer) => sendResponse({ ok: true, answer }))
       .catch((error) => {
         console.error('[CaptureAgent] Form answer generation failed', error);
+        sendResponse({ ok: false, error: error.message });
+      });
+
+    return true;
+  }
+
+  if (message.type === MESSAGE_TYPES.MAP_FORM_FIELDS) {
+    mapFormFields(message)
+      .then((mappings) => sendResponse({ ok: true, mappings }))
+      .catch((error) => {
+        console.error('[CaptureAgent] Field mapping failed', error);
         sendResponse({ ok: false, error: error.message });
       });
 

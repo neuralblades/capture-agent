@@ -7,11 +7,13 @@ import os
 from groq import Groq
 from pydantic import ValidationError
 
-from models import ExtractionResult, MatchResult, ProfileContext
+from models import ExtractionResult, FieldMapping, FormFieldDescriptor, MatchResult, ProfileContext
 from providers.base import (
     FORM_ANSWER_SYSTEM_PROMPT,
+    MAP_FORM_FIELDS_SYSTEM_PROMPT,
     MATCH_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
+    format_form_fields,
     format_profile,
     LLMProvider,
 )
@@ -126,3 +128,39 @@ class GroqProvider(LLMProvider):
             return MatchResult.model_validate(json.loads(raw))
         except (json.JSONDecodeError, ValidationError) as exc:
             raise ValueError("Groq did not return a parseable match result") from exc
+
+    def map_form_fields(
+        self, fields: list[FormFieldDescriptor], profile: ProfileContext
+    ) -> list[FieldMapping]:
+        if not fields:
+            return []
+
+        system_prompt = MAP_FORM_FIELDS_SYSTEM_PROMPT.format(
+            profile=format_profile(profile), fields=format_form_fields(fields)
+        )
+
+        response = self.get_client().chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Map the fields above."},
+            ],
+            response_format={"type": "json_object"},
+        )
+
+        choice = response.choices[0]
+        if choice.finish_reason == "content_filter":
+            raise ValueError("Groq declined to map these fields")
+
+        raw = choice.message.content
+        if not raw:
+            raise ValueError("Groq did not return a parseable field mapping result")
+
+        try:
+            parsed = json.loads(raw)
+            mappings = [FieldMapping.model_validate(item) for item in parsed.get("mappings", [])]
+        except (json.JSONDecodeError, ValidationError, AttributeError) as exc:
+            raise ValueError("Groq did not return a parseable field mapping result") from exc
+
+        valid_indices = {field.index for field in fields}
+        return [mapping for mapping in mappings if mapping.index in valid_indices]

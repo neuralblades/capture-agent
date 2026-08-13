@@ -1,9 +1,10 @@
 """Base class and shared prompts for LLM providers."""
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 
-from models import ExtractionResult, MatchResult, ProfileContext
+from models import ExtractionResult, FieldMapping, FormFieldDescriptor, MatchResult, ProfileContext
 
 SYSTEM_PROMPT = """You extract structured information from social media posts captured by a browser extension.
 
@@ -35,6 +36,22 @@ If the post doesn't describe a job or role with identifiable requirements, still
 Resume:
 {resume_text}"""
 
+MAP_FORM_FIELDS_SYSTEM_PROMPT = """You fill out a job application form on behalf of an applicant, using their profile below. You are given a JSON list of form fields the caller could not confidently fill with simple heuristics -- some are ambiguous EEO/screening questions (work authorization, veteran status, disability status, race/ethnicity), some are custom text questions, some are ATS-specific fields with unclear labels.
+
+For each field:
+- "text"/"textarea": write a short, first-person answer using the profile. Don't invent facts the profile doesn't support -- answer generally instead of fabricating specifics.
+- "select"/"radio-group"/"checkbox-group": pick the single option whose label text best matches the applicant's profile, and respond with that option's "value" field verbatim (never invent a new value; never return the label text). If nothing in the profile is relevant to a screening question (e.g. no veteran_status given), prefer an option whose label reads like "prefer not to answer" / "decline to state" if one exists, otherwise skip the field entirely.
+- If a field can't be confidently mapped at all (no relevant profile data and no safe default option), omit it from your response rather than guessing.
+
+Respond with ONLY a single JSON object (no surrounding text or markdown) of this shape:
+{{"mappings": [{{"index": number, "value": string}}, ...]}}
+
+Applicant profile:
+{profile}
+
+Form fields:
+{fields}"""
+
 
 _PROFILE_LABELS = {
     "full_name": "Name",
@@ -43,17 +60,29 @@ _PROFILE_LABELS = {
     "linkedin_url": "LinkedIn",
     "github_url": "GitHub",
     "resume_text": "Resume",
+    "work_authorized": "Authorized to work without sponsorship",
+    "veteran_status": "Veteran status",
+    "disability_status": "Disability status",
+    "ethnicity": "Race/ethnicity",
 }
 
 
 def format_profile(profile: ProfileContext) -> str:
     """Render only the populated profile fields as "Label: value" lines."""
-    lines = [
-        f"{label}: {value}"
-        for field, label in _PROFILE_LABELS.items()
-        if (value := getattr(profile, field))
-    ]
+    lines = []
+    for field, label in _PROFILE_LABELS.items():
+        value = getattr(profile, field)
+        # work_authorized is a bool: explicit False is populated information
+        # ("not authorized"), unlike the string fields where "" means unset.
+        if value is None or value == "":
+            continue
+        lines.append(f"{label}: {value}")
     return "\n".join(lines) if lines else "(no profile information provided)"
+
+
+def format_form_fields(fields: list[FormFieldDescriptor]) -> str:
+    """Render field descriptors as JSON for inclusion in the field-mapping prompt."""
+    return json.dumps([field.model_dump() for field in fields])
 
 
 class LLMProvider(ABC):
@@ -72,4 +101,11 @@ class LLMProvider(ABC):
     @abstractmethod
     def calculate_match(self, content: str, resume_text: str) -> MatchResult:
         """Score how well an applicant's resume matches a captured post's content."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def map_form_fields(
+        self, fields: list[FormFieldDescriptor], profile: ProfileContext
+    ) -> list[FieldMapping]:
+        """Map ambiguous/custom form fields to profile values or generated answers."""
         raise NotImplementedError

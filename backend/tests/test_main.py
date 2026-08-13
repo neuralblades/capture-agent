@@ -1,7 +1,7 @@
 from datetime import datetime
 from unittest.mock import patch
 
-from models import Deadline, ExtractionResult, GeneratedEmail, MatchResult
+from models import Deadline, ExtractionResult, FieldMapping, GeneratedEmail, MatchResult
 
 FAKE_RESULT = ExtractionResult(
     summary="Team asks for feedback on the new design by Friday.",
@@ -367,3 +367,60 @@ def test_categories_aggregates_across_posts(client):
     assert body[0] == {"name": "All", "count": 3}
     assert {"name": "AI Tools", "count": 2} in body
     assert {"name": "Finance", "count": 1} in body
+
+
+def test_map_form_fields_returns_mappings(client):
+    fake_mappings = [
+        FieldMapping(index=0, value="opt-yes"),
+        FieldMapping(index=1, value="I'm excited about this role."),
+    ]
+    with patch("main.map_form_fields", return_value=fake_mappings) as mock_map:
+        resp = client.post(
+            "/map-form-fields",
+            json={
+                "fields": [
+                    {
+                        "index": 0,
+                        "type": "radio-group",
+                        "label": "Are you authorized to work?",
+                        "options": [{"value": "opt-yes", "label": "Yes"}, {"value": "opt-no", "label": "No"}],
+                    },
+                    {"index": 1, "type": "textarea", "label": "Why do you want to join?"},
+                ],
+                "profile": {"full_name": "Jane Doe", "work_authorized": True},
+            },
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "mappings": [
+            {"index": 0, "value": "opt-yes"},
+            {"index": 1, "value": "I'm excited about this role."},
+        ]
+    }
+    args, _ = mock_map.call_args
+    assert args[0][0].label == "Are you authorized to work?"
+    assert args[1].full_name == "Jane Doe"
+    assert args[1].work_authorized is True
+
+
+def test_map_form_fields_defaults_to_empty_when_omitted(client):
+    with patch("main.map_form_fields", return_value=[]) as mock_map:
+        resp = client.post("/map-form-fields", json={})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"mappings": []}
+    args, _ = mock_map.call_args
+    assert args[0] == []
+    assert args[1].full_name is None
+
+
+def test_map_form_fields_returns_502_on_failure(client):
+    with patch("main.map_form_fields", side_effect=RuntimeError("boom")):
+        resp = client.post(
+            "/map-form-fields",
+            json={"fields": [{"index": 0, "type": "text", "label": "City"}]},
+        )
+
+    assert resp.status_code == 502
+    assert "boom" in resp.json()["detail"]
