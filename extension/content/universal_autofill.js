@@ -238,16 +238,21 @@
   // Profile-key matching (direct-fill identity fields)
   // ---------------------------------------------------------------------
 
-  // Checked in order so a specific pattern wins over a generic one.
+  // Checked in order so a specific pattern wins over a generic one. fullName
+  // must come before firstName/lastName: matchKey() returns on the first
+  // hit, and "First and Last Name" (a real ATS label, hence fullName's own
+  // "first and last name" alternative below) contains "Last Name" as a
+  // substring, so lastName's pattern would otherwise shadow it and the field
+  // would get filled with just the last name.
   const LABEL_MATCHERS = [
     { key: 'email', pattern: /e-?mail/i },
     { key: 'phone', pattern: /phone|mobile(?! app)|contact number/i },
     { key: 'linkedinUrl', pattern: /linkedin/i },
     { key: 'githubUrl', pattern: /github/i },
-    { key: 'firstName', pattern: /first name|given name/i },
-    { key: 'lastName', pattern: /last name|family name|surname/i },
     { key: 'resumeText', pattern: /resume|\bcv\b/i },
     { key: 'fullName', pattern: /full name|your name|first and last name|^name$|applicant'?s? name|candidate'?s? name/i },
+    { key: 'firstName', pattern: /first name|given name/i },
+    { key: 'lastName', pattern: /last name|family name|surname/i },
   ];
 
   // Matched against a normalized string of the element's name/id/
@@ -255,7 +260,12 @@
   // covers ATS platforms (Workday in particular) that render custom widgets
   // where the visible label isn't reliably associated with the input via
   // label/aria. Deliberately narrower than LABEL_MATCHERS to avoid false
-  // positives on generic attribute names like "companyName".
+  // positives on generic attribute names like "companyName". Unlike
+  // LABEL_MATCHERS, firstName/lastName intentionally stay ordered before
+  // fullName here: attribute names are terse identifiers (snake/camelCase),
+  // never full English phrases like "first and last name", and fullName's
+  // "_name$" alternative would otherwise shadow a snake_case "first_name"/
+  // "last_name" attribute (both literally end in "_name").
   const ATTRIBUTE_MATCHERS = [
     { key: 'email', pattern: /e.?mail/i },
     { key: 'phone', pattern: /phone|mobile|telnumber/i },
@@ -314,6 +324,11 @@
     if (!WORK_AUTH_PATTERN.test(groupLabel)) return false;
     if (profile.workAuthorized !== 'yes' && profile.workAuthorized !== 'no') return false;
     if (inputs.length !== 2) return false;
+    // A group with a selection already -- whether the user picked it or the
+    // page defaulted to it -- is never overwritten. Re-running on every
+    // mutation-triggered pass without this would let a later pass silently
+    // flip a legally-sensitive answer the applicant deliberately set.
+    if (inputs.some((input) => input.checked)) return false;
 
     const target = inputs.find((input) => {
       const text = labelTextFor(input).trim().toLowerCase();
@@ -363,6 +378,10 @@
 
   function collectSelectCandidate(element) {
     if (element.dataset[FILLED_MARKER]) return;
+    // A non-empty value means either the applicant chose one or the page's
+    // own placeholder-option convention (empty value = unanswered) reports
+    // this as already answered -- don't offer it to the AI mapper.
+    if (element.value) return;
     const labelText = labelTextFor(element);
     if (!labelText || CONSENT_EXCLUDE_PATTERN.test(labelText)) return;
 
@@ -387,6 +406,10 @@
   function collectGroupCandidate(inputs, groupLabel, type) {
     if (!groupLabel || CONSENT_EXCLUDE_PATTERN.test(groupLabel)) return;
     if (inputs.some((input) => input.dataset[FILLED_MARKER])) return;
+    // A group the applicant (or the page) already answered is never offered
+    // to the AI mapper either -- clicking "Autofill with AI" shouldn't be
+    // able to silently flip a selection the user already made themselves.
+    if (inputs.some((input) => input.checked)) return;
 
     const options = inputs.map((input) => {
       const label = labelTextFor(input) || textOf(input.closest('label')) || input.value;
@@ -514,6 +537,13 @@
 
     for (const element of candidates) {
       if (element.dataset[FILLED_MARKER]) continue;
+      // A non-empty value already present -- whether the applicant typed it
+      // themselves or the page pre-filled it -- is never overwritten. Every
+      // pass re-scans the whole document (triggered by any DOM mutation
+      // anywhere on the page, not just in this field), so without this
+      // check a later pass could silently clobber something the user just
+      // typed before this script had a chance to mark it as filled.
+      if (element.value && element.value.trim()) continue;
 
       const labelText = labelTextFor(element);
       const key = matchProfileKey(element, labelText);
