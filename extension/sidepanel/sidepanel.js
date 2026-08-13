@@ -1,4 +1,5 @@
 import { ACTIONS_BY_TYPE, ActionType, MessageType, ItemType, ItemStatus } from "./contracts.js";
+import { getMetrics, getAppliedItemIds, incrementMetric, setItemApplied, conversionRate, MetricName } from "./metrics.js";
 
 const BACKEND_POSTS_URL = "http://localhost:8000/posts";
 const BACKEND_CATEGORIES_URL = "http://localhost:8000/categories";
@@ -62,6 +63,8 @@ const state = {
   items: [],
   sortByMatch: false,
   categories: [{ name: ALL_CATEGORY, count: 0 }],
+  metrics: {},
+  appliedIds: new Set(),
 };
 
 const els = {
@@ -71,6 +74,8 @@ const els = {
   search: document.getElementById("search-input"),
   toast: document.getElementById("toast"),
   sortMatchBtn: document.getElementById("sort-match-btn"),
+  statCaptures: document.getElementById("stat-captures"),
+  statRate: document.getElementById("stat-rate"),
 };
 
 /** @returns {Promise<Record<string, unknown>>} Profile written by extension/options. */
@@ -213,7 +218,21 @@ function mapPostToItem(post) {
     matchingSkills: [],
     missingSkills: [],
     category: post.category || "General",
+    applied: false,
   };
+}
+
+/** Merges persisted "Mark as Applied" state onto freshly loaded/pushed items, in place. */
+function applyAppliedState(items) {
+  for (const item of items) {
+    item.applied = state.appliedIds.has(item.id);
+  }
+}
+
+async function refreshMetrics() {
+  const [metrics, appliedIds] = await Promise.all([getMetrics(), getAppliedItemIds()]);
+  state.metrics = metrics;
+  state.appliedIds = appliedIds;
 }
 
 async function loadPosts() {
@@ -223,7 +242,9 @@ async function loadPosts() {
       throw new Error(`Failed to load posts (${response.status})`);
     }
     const posts = await response.json();
-    state.items = Array.isArray(posts) ? posts.map(mapPostToItem) : [];
+    const items = Array.isArray(posts) ? posts.map(mapPostToItem) : [];
+    applyAppliedState(items);
+    state.items = items;
     render();
     // Fire-and-forget: scores trickle in and each re-render as it resolves,
     // rather than blocking the initial list paint on N LLM calls.
@@ -439,14 +460,31 @@ function renderList() {
 
     const actions = document.createElement("div");
     actions.className = "item-actions";
+
+    const actionGroup = document.createElement("div");
+    actionGroup.className = "action-group";
     for (const { action, label } of actionsForItem(item)) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "action-btn" + (action === "dismiss" ? " destructive" : "") + (action === ActionType.APPLY_FORM ? " primary" : "");
       btn.textContent = label;
       btn.addEventListener("click", () => runAction(item, action, btn));
-      actions.appendChild(btn);
+      actionGroup.appendChild(btn);
     }
+    actions.appendChild(actionGroup);
+
+    const applyToggle = document.createElement("label");
+    applyToggle.className = "apply-toggle";
+    const applyCheckbox = document.createElement("input");
+    applyCheckbox.type = "checkbox";
+    applyCheckbox.checked = !!item.applied;
+    applyCheckbox.addEventListener("change", () => toggleApplied(item, applyCheckbox));
+    const applyText = document.createElement("span");
+    applyText.textContent = "Mark as Applied";
+    applyToggle.appendChild(applyCheckbox);
+    applyToggle.appendChild(applyText);
+    actions.appendChild(applyToggle);
+
     card.appendChild(actions);
 
     els.list.appendChild(card);
@@ -465,6 +503,24 @@ function gmailComposeUrl({ to, subject, body }) {
     .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
     .join("&");
   return `https://mail.google.com/mail/?${params}`;
+}
+
+/** Toggles an item's self-reported "applied" state and syncs the applications_submitted metric. */
+async function toggleApplied(item, checkboxEl) {
+  checkboxEl.disabled = true;
+  try {
+    const { metrics } = await setItemApplied(item.id, checkboxEl.checked);
+    item.applied = checkboxEl.checked;
+    state.metrics = metrics;
+    renderStats();
+    showToast(checkboxEl.checked ? "Marked as applied" : "Unmarked as applied");
+  } catch (error) {
+    console.error("[CaptureAgent] Failed to update applied status", error);
+    checkboxEl.checked = !checkboxEl.checked;
+    showToast("Couldn't update status", true);
+  } finally {
+    checkboxEl.disabled = false;
+  }
 }
 
 async function draftEmail(item, triggerEl) {
@@ -494,6 +550,8 @@ async function draftEmail(item, triggerEl) {
       window.open(url, "_blank", "noopener");
     }
     showToast("Draft ready in Gmail");
+    state.metrics = await incrementMetric(MetricName.EMAILS_DRAFTED);
+    renderStats();
   } catch (error) {
     console.error("[CaptureAgent] Draft email failed", error);
     showToast("Couldn't draft email", true);
@@ -513,6 +571,10 @@ async function runAction(item, action, triggerEl) {
       chrome.tabs.create({ url });
     } else {
       window.open(url, "_blank", "noopener");
+    }
+    if (action === ActionType.APPLY_FORM) {
+      state.metrics = await incrementMetric(MetricName.FORMS_OPENED);
+      renderStats();
     }
     return;
   }
@@ -555,7 +617,13 @@ function showToast(message, isError) {
   }, 2200);
 }
 
+function renderStats() {
+  els.statCaptures.textContent = String(state.metrics[MetricName.CAPTURES_TOTAL] || 0);
+  els.statRate.textContent = `${Math.round(conversionRate(state.metrics))}%`;
+}
+
 function render() {
+  renderStats();
   renderTabs();
   renderList();
 }
@@ -579,10 +647,11 @@ els.search.addEventListener("input", (e) => {
 if (hasExtensionRuntime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === MessageType.REFRESH_POSTS) {
-      loadPosts();
+      refreshMetrics().then(loadPosts);
       loadCategories();
     }
     if (message?.type === MessageType.ITEMS_UPDATED && Array.isArray(message.items)) {
+      applyAppliedState(message.items);
       state.items = message.items;
       render();
     }
@@ -598,14 +667,17 @@ function categoriesFromItems(items) {
   return [{ name: ALL_CATEGORY, count: items.length }, ...[...counts].map(([name, count]) => ({ name, count }))];
 }
 
-function boot() {
+async function boot() {
+  await refreshMetrics();
   if (!hasExtensionRuntime) {
-    state.items = SAMPLE_ITEMS;
+    const items = SAMPLE_ITEMS;
+    applyAppliedState(items);
+    state.items = items;
     state.categories = categoriesFromItems(SAMPLE_ITEMS);
     render();
     return;
   }
-  loadPosts();
+  await loadPosts();
   loadCategories();
 }
 

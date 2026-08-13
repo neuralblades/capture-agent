@@ -3,6 +3,8 @@
 // handlers (background.js) and the context-menu capture flow (context_menu.js)
 // so the two entry points don't duplicate the fetch + notify logic.
 
+import { incrementMetric, MetricName } from '../sidepanel/metrics.js';
+
 const CAPTURE_ENDPOINT = 'http://localhost:8000/capture';
 
 /**
@@ -26,9 +28,17 @@ export async function submitCapture(post) {
     throw new Error(`Capture request failed with status ${response.status}`);
   }
 
+  const result = await response.json();
+
+  // Funnel metrics count captured events, not live post rows, so a later
+  // dismiss (which deletes the post) doesn't retroactively shrink this total.
+  await incrementMetric(MetricName.CAPTURES_TOTAL).catch((error) =>
+    console.error('[CaptureAgent] Failed to record capture metric', error)
+  );
+
   // Let the sidepanel know new data is available so it can refresh. This is
   // a no-op if the sidepanel isn't currently open to receive it.
   chrome.runtime.sendMessage({ type: 'REFRESH_POSTS' }).catch(() => {});
 
-  return response.json();
+  return result;
 }
