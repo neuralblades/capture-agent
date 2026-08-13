@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Capture Agent — Profile</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>Your profile</h1>
+      <p class="hint">
+        Used by the Google Forms autofill content script to fill in your standard fields and to
+        draft answers to open-ended questions. Stored locally in this browser only.
+      </p>
+
+      <form id="profile-form">
+        <label>
+          Full name
+          <input type="text" id="fullName" autocomplete="name" />
+        </label>
+        <label>
+          Email
+          <input type="email" id="email" autocomplete="email" />
+        </label>
+        <label>
+          Phone
+          <input type="tel" id="phone" autocomplete="tel" />
+        </label>
+        <label>
+          LinkedIn URL
+          <input type="url" id="linkedinUrl" placeholder="https://linkedin.com/in/..." />
+        </label>
+        <label>
+          GitHub URL
+          <input type="url" id="githubUrl" placeholder="https://github.com/..." />
+        </label>
+        <label>
+          Resume text
+          <textarea
+            id="resumeText"
+            rows="8"
+            placeholder="Paste a plain-text version of your resume. Used as context for AI-drafted answers."
+          ></textarea>
+        </label>
+
+        <div class="actions">
+          <button type="submit">Save</button>
+          <span id="status" class="status" role="status" aria-live="polite"></span>
+        </div>
+      </form>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>
