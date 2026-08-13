@@ -6,9 +6,14 @@
 // linkedin.com, so it can't rely on the CaptureAgent globals the x.com
 // content scripts set up.
 //
-// LinkedIn ships several markup variants across its redesigns and doesn't
-// expose stable data-testid hooks the way x.com does, so each lookup below
-// tries a short list of known candidate selectors and uses the first match.
+// LinkedIn's feed and job-detail markup now ships as atomic/hashed CSS
+// classes (e.g. "d3e5c957") that are meaningless and regenerate on every
+// deploy, so there is nothing stable to hang a CSS selector off. Instead,
+// every lookup below anchors on ARIA landmarks (aria-label / role), which
+// are part of LinkedIn's own accessibility contract and change far less
+// often than presentational class names. If these stop matching in the
+// future, re-derive them by inspecting a live page's aria-label attributes
+// rather than guessing at new class names.
 (function () {
   'use strict';
 
@@ -16,29 +21,26 @@
   const INJECTED_ATTR = 'data-capture-agent-injected';
   const RESET_DELAY_MS = 2500;
 
-  const FEED_POST_SELECTOR = 'div.feed-shared-update-v2[data-urn]';
-  const FEED_ACTION_BAR_SELECTORS = ['.feed-shared-social-action-bar', '.social-actions-bar'];
-  const FEED_TEXT_SELECTORS = ['.feed-shared-update-v2__description .update-components-text', '.feed-shared-text'];
-  const FEED_AUTHOR_SELECTOR = '.update-components-actor__name';
+  const POST_CONTROL_MENU_PREFIX = 'Open control menu for post by ';
+  const REACTION_BUTTON_PREFIX = 'Reaction button state:';
+  const COMPANY_ARIA_PREFIX = 'Company, ';
 
-  const JOB_TOP_CARD_SELECTORS = ['.job-details-jobs-unified-top-card', '.jobs-unified-top-card'];
-  const JOB_TITLE_SELECTORS = ['.job-details-jobs-unified-top-card__job-title', '.jobs-unified-top-card__job-title', 'h1'];
-  const JOB_COMPANY_SELECTORS = ['.job-details-jobs-unified-top-card__company-name', '.jobs-unified-top-card__company-name'];
-  const JOB_DESCRIPTION_SELECTORS = ['#job-details', '.jobs-description__content', '.jobs-box__html-content'];
-  const JOB_ACTIONS_SELECTORS = ['.jobs-unified-top-card__actions', '.job-details-jobs-unified-top-card__container--two-pane'];
-
-  /**
-   * @param {ParentNode} root
-   * @param {string[]} selectors
-   * @returns {Element|null}
-   */
-  function firstMatch(root, selectors) {
-    for (const selector of selectors) {
-      const el = root.querySelector(selector);
-      if (el) return el;
-    }
-    return null;
-  }
+  // UI chrome that shows up as <p> text alongside the real post body (reaction
+  // counts, "Promoted", connection-degree badges, etc.) -- filtered out when
+  // hunting for the actual post text among a card's paragraphs.
+  const POST_TEXT_DENYLIST = [
+    /^•?\s*(1st|2nd|3rd)\+?$/i,
+    /^(promoted|suggested)$/i,
+    /\blikes? this$/i,
+    /\bcommented(\s+on\s+this)?$/i,
+    /^\d[\d,]*\s*(reaction|comment|repost)/i,
+    /^(see|load|view)\s+.*(comment|repost|reaction)/i,
+    /^\+\d+$/,
+    /\band\s+\d+\s+others?$/i,
+    /^\s*•\s*$/,
+    /^[\d,]+\s+followers?$/i,
+    /^\d+\s*(h|d|w|mo|y)\s*(•|·)?\s*(edited)?\s*•?\s*$/i,
+  ];
 
   /**
    * @param {Element|null} el
@@ -109,28 +111,103 @@
   }
 
   /**
-   * LinkedIn's real, working permalink format for a feed update.
-   * @param {string|null} urn - e.g. "urn:li:activity:1234567890"
-   * @returns {string}
+   * Climbs from a known descendant and returns the nearest ancestor matching
+   * `matcher` -- e.g. the actual flex row holding a set of action buttons,
+   * rather than some larger wrapper further out that also happens to
+   * contain them.
+   * @param {Element} start
+   * @param {(el: Element) => boolean} matcher
+   * @param {number} maxLevels
+   * @returns {Element|null}
    */
-  function feedPostUrl(urn) {
-    return urn ? `https://www.linkedin.com/feed/update/${urn}/` : location.href;
+  function climbUntil(start, matcher, maxLevels) {
+    let current = start;
+    for (let i = 0; i < maxLevels && current; i++) {
+      if (matcher(current)) return current;
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  // ---- Feed posts ----
+
+  /**
+   * Each feed post is a div[role="listitem"] carrying a visually-hidden
+   * "Feed post" <h2> for screen readers -- the most stable per-post boundary
+   * left in the current markup.
+   * @returns {Element[]}
+   */
+  function findPostCards() {
+    return Array.from(document.querySelectorAll('div[role="listitem"]')).filter((card) =>
+      Array.from(card.querySelectorAll('h2')).some((h2) => cleanText(h2).startsWith('Feed post'))
+    );
   }
 
   /**
-   * @param {Element} article
+   * @param {Element} card
+   * @returns {string|null}
    */
-  function injectIntoFeedPost(article) {
-    if (article.getAttribute(INJECTED_ATTR) === 'true') return;
+  function getPostAuthor(card) {
+    const control = card.querySelector(`[aria-label^="${POST_CONTROL_MENU_PREFIX}"]`);
+    if (!control) return null;
+    return control.getAttribute('aria-label').slice(POST_CONTROL_MENU_PREFIX.length).trim() || null;
+  }
 
-    const actionBar = firstMatch(article, FEED_ACTION_BAR_SELECTORS);
+  /**
+   * The post body has no dedicated container anymore, so this picks the
+   * longest paragraph in the card that isn't a piece of known UI chrome
+   * (author name, reaction counts, "Promoted", etc.) -- in practice the
+   * actual post text is reliably the longest surviving candidate.
+   * @param {Element} card
+   * @param {string|null} author
+   * @returns {string}
+   */
+  function getPostText(card, author) {
+    const candidates = Array.from(card.querySelectorAll('p'))
+      .map((p) => cleanText(p))
+      .filter((text) => text && text !== author && !POST_TEXT_DENYLIST.some((re) => re.test(text)));
+
+    candidates.sort((a, b) => b.length - a.length);
+    return candidates[0] || '';
+  }
+
+  /**
+   * The action row (Like/Comment/Repost/Send) is found by climbing from the
+   * Like button until the ancestor holds all of them.
+   * @param {Element} card
+   * @returns {Element|null}
+   */
+  function findFeedActionBar(card) {
+    const likeButton = card.querySelector(`[aria-label^="${REACTION_BUTTON_PREFIX}"]`);
+    if (!likeButton) return null;
+    return climbUntil(likeButton, (el) => el.querySelectorAll('button, [role="button"], a').length >= 3, 10);
+  }
+
+  /**
+   * Not every post exposes a permalink in the DOM (promoted posts especially),
+   * so this falls back to the feed URL itself when one can't be found.
+   * @param {Element} card
+   * @returns {string}
+   */
+  function getPostUrl(card) {
+    const permalink = card.querySelector('a[href*="/feed/update/urn:li:"]');
+    return permalink ? permalink.href : location.href;
+  }
+
+  /**
+   * @param {Element} card
+   */
+  function injectIntoFeedPost(card) {
+    if (card.getAttribute(INJECTED_ATTR) === 'true') return;
+
+    const actionBar = findFeedActionBar(card);
     if (!actionBar) return;
 
-    const text = cleanText(firstMatch(article, FEED_TEXT_SELECTORS));
+    const author = getPostAuthor(card);
+    const text = getPostText(card, author);
     if (!text) return;
 
-    const author = cleanText(article.querySelector(FEED_AUTHOR_SELECTOR)) || null;
-    const url = feedPostUrl(article.getAttribute('data-urn'));
+    const url = getPostUrl(card);
 
     const button = createButton('Capture');
     button.addEventListener('click', (event) => {
@@ -140,36 +217,49 @@
     });
 
     actionBar.appendChild(button);
-    article.setAttribute(INJECTED_ATTR, 'true');
+    card.setAttribute(INJECTED_ATTR, 'true');
+  }
+
+  // ---- Job detail view ----
+
+  /**
+   * The Apply/Easy-Apply and Save buttons share a common wrapper a couple of
+   * levels up -- that wrapper is also where the capture button gets appended.
+   * @returns {Element|null}
+   */
+  function findJobActionsBar() {
+    const applyButton = document.querySelector('button[aria-label*="Apply" i], a[aria-label*="Apply" i]');
+    if (!applyButton) return null;
+    return climbUntil(applyButton, (el) => el.querySelectorAll('button, a').length >= 2, 10);
   }
 
   /**
-   * The job id embedded in the current URL, whether viewing a job directly
-   * (/jobs/view/{id}) or a job selected within the search results split pane
-   * (?currentJobId={id}).
-   * @returns {string|null}
+   * The description lives in the sibling right after the "About the job"
+   * heading's wrapper.
+   * @returns {string}
    */
-  function jobIdFromLocation() {
-    const viewMatch = location.pathname.match(/\/jobs\/view\/(\d+)/);
-    if (viewMatch) return viewMatch[1];
-    return new URLSearchParams(location.search).get('currentJobId');
+  function getJobDescription() {
+    const heading = Array.from(document.querySelectorAll('h2')).find((h2) => cleanText(h2) === 'About the job');
+    const container = heading?.parentElement?.nextElementSibling;
+    return container ? cleanText(container) : '';
   }
 
   function injectIntoJobTopCard() {
-    const topCard = firstMatch(document, JOB_TOP_CARD_SELECTORS);
-    if (!topCard || topCard.getAttribute(INJECTED_ATTR) === 'true') return;
+    const actionsBar = findJobActionsBar();
+    if (!actionsBar || actionsBar.getAttribute(INJECTED_ATTR) === 'true') return;
 
-    const description = cleanText(firstMatch(document, JOB_DESCRIPTION_SELECTORS));
+    const description = getJobDescription();
     if (!description) return;
 
-    const title = cleanText(firstMatch(topCard, JOB_TITLE_SELECTORS));
-    const company = cleanText(firstMatch(topCard, JOB_COMPANY_SELECTORS));
+    // The split-pane job search view only ever renders one job's own detail
+    // pane at a time (its "similar jobs" widgets link elsewhere, not via
+    // /jobs/view/), so an unscoped lookup for these two landmarks reliably
+    // lands on the currently-open job rather than a neighboring list card.
+    const titleLink = document.querySelector('a[href*="/jobs/view/"]');
+    const title = cleanText(titleLink);
+    const company = cleanText(document.querySelector(`[aria-label^="${COMPANY_ARIA_PREFIX}"]`));
     const author = [title, company].filter(Boolean).join(' @ ') || null;
-
-    const jobId = jobIdFromLocation();
-    const url = jobId ? `https://www.linkedin.com/jobs/view/${jobId}/` : location.href;
-
-    const actionsContainer = firstMatch(document, JOB_ACTIONS_SELECTORS) || topCard;
+    const url = titleLink ? titleLink.href : location.href;
 
     const button = createButton('Capture job');
     button.classList.add('capture-agent-btn-linkedin-job');
@@ -179,8 +269,8 @@
       sendCapture({ platform: 'linkedin', author, text: description, url, idleLabel: 'Capture job' }, button);
     });
 
-    actionsContainer.appendChild(button);
-    topCard.setAttribute(INJECTED_ATTR, 'true');
+    actionsBar.appendChild(button);
+    actionsBar.setAttribute(INJECTED_ATTR, 'true');
   }
 
   let observer = null;
@@ -200,7 +290,7 @@
       return;
     }
 
-    document.querySelectorAll(FEED_POST_SELECTOR).forEach(injectIntoFeedPost);
+    findPostCards().forEach(injectIntoFeedPost);
     injectIntoJobTopCard();
   }
 
