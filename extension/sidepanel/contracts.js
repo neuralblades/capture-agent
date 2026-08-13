@@ -92,6 +92,7 @@ export const MessageType = Object.freeze({
  * @property {"RUN_ACTION"} type
  * @property {"fill_form"|"draft_email"|"open_source"|"dismiss"} action
  * @property {string} itemId
+ * @property {number} [postId]  Backend post id, present for backend-sourced items (e.g. dismiss).
  */
 
 /**

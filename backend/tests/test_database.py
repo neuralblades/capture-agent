@@ -62,6 +62,31 @@ def test_get_missing_post_returns_none(isolated_db):
     assert database.get_post(12345) is None
 
 
+def test_get_post_by_url_returns_most_recent_match(isolated_db):
+    _insert(url="https://x.com/a/status/1", content="first capture")
+    second_id = _insert(url="https://x.com/a/status/1", content="second capture")
+
+    record = database.get_post_by_url("https://x.com/a/status/1")
+    assert record is not None
+    assert record["id"] == second_id
+    assert record["content"] == "second capture"
+
+
+def test_get_post_by_url_returns_none_when_no_match(isolated_db):
+    assert database.get_post_by_url("https://x.com/nope/status/1") is None
+
+
+def test_delete_post_removes_row_and_returns_true(isolated_db):
+    post_id = _insert()
+
+    assert database.delete_post(post_id) is True
+    assert database.get_post(post_id) is None
+
+
+def test_delete_post_returns_false_when_missing(isolated_db):
+    assert database.delete_post(99999) is False
+
+
 def test_contact_email_defaults_to_none(isolated_db):
     post_id = _insert()
     assert database.get_post(post_id)["contact_email"] is None
