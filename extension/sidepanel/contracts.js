@@ -64,6 +64,8 @@ export const MessageType = Object.freeze({
  * @property {string[]} [matchingSkills] Skills from the post the resume already covers, from the last match calculation.
  * @property {string[]} [missingSkills] Skills from the post the resume doesn't show, from the last match calculation.
  * @property {string} category         Open-ended category assigned by the backend (e.g. "AI Tools"), or "General".
+ * @property {boolean} [applied] Self-reported "Mark as Applied" state, persisted in `chrome.storage.local`
+ *   via `metrics.js` and merged onto the item client-side (not part of the backend PostRecord).
  */
 
 /**

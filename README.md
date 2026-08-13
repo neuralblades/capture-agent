@@ -57,8 +57,9 @@ Content script injected into `x.com` / `twitter.com` tweet pages.
 ### `extension/sidepanel/` — Dashboard UI
 The extension's side panel, where captured items are triaged.
 - `sidepanel.html` / `sidepanel.css` — panel markup and styling.
-- `sidepanel.js` — renders tabbed, searchable item cards from `GET_ITEMS`, dispatches `RUN_ACTION` requests, and listens for `ITEMS_UPDATED` pushes. Cards with a detected contact email get a "Draft Email" action that calls the backend's `POST /generate-email` directly and opens a pre-filled Gmail compose tab via `chrome.tabs.create()`. Falls back to sample data when run outside an extension runtime (e.g. previewing the HTML directly).
+- `sidepanel.js` — renders tabbed, searchable item cards from `GET_ITEMS`, dispatches `RUN_ACTION` requests, and listens for `ITEMS_UPDATED` pushes. Cards with a detected contact email get a "Draft Email" action that calls the backend's `POST /generate-email` directly and opens a pre-filled Gmail compose tab via `chrome.tabs.create()`. Every card also has a "Mark as Applied" toggle. Falls back to sample data when run outside an extension runtime (e.g. previewing the HTML directly).
 - `contracts.js` — the typed JSON contracts (`CapturedItem`, message types, action types) other modules import to stay in sync without hand-typing string literals.
+- `metrics.js` — local funnel metrics engine backed by `chrome.storage.local` (no backend round trip). Tracks lifecycle counters (`captures_total`, `forms_opened`, `emails_drafted`, `applications_submitted`) plus which item ids have been marked applied. `captures_total` is incremented by the background service worker on every successful capture (see `extension/background/background.js`) so it stays a monotonic event count independent of the live post list; the other counters are incremented by the sidepanel as the user opens an apply form, drafts an email, or flips the "Mark as Applied" toggle. The panel's stats header reads this to show Total Captures and Conversion Rate (`applications_submitted / captures_total`).
 
 ### `backend/` — AI Backend
 FastAPI service that turns raw captured text into structured, actionable data.
