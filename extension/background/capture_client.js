@@ -8,7 +8,7 @@ import { incrementMetric, MetricName } from '../sidepanel/metrics.js';
 const CAPTURE_ENDPOINT = 'http://localhost:8000/capture';
 
 /**
- * @param {{platform: string, author?: string|null, content: string, url?: string|null, capturedAt?: string|null}} post
+ * @param {{platform: string, author?: string|null, content: string, url?: string|null, capturedAt?: string|null, postedAt?: string|null}} post
  * @returns {Promise<unknown>}
  */
 export async function submitCapture(post) {
@@ -21,6 +21,7 @@ export async function submitCapture(post) {
       content: post.content,
       url: post.url ?? null,
       captured_at: post.capturedAt ?? null,
+      posted_at: post.postedAt ?? null,
     }),
   });
 

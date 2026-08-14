@@ -66,6 +66,10 @@ export const MessageType = Object.freeze({
  * @property {string} category         Open-ended category assigned by the backend (e.g. "AI Tools"), or "General".
  * @property {boolean} isOpportunity   Whether the backend classified this post as a job/application-type
  *   opportunity. Match scoring (and the match pill) only applies when this is true.
+ * @property {string|null} [postedAt] ISO 8601 timestamp for when the source post/listing was originally
+ *   published, if the platform exposes it -- exact for X (the tweet's own timestamp), approximate for
+ *   LinkedIn (resolved client-side from its relative-age text). Null when unknown. Drives the freshness
+ *   pill, which (like the match pill) only renders for opportunity items.
  * @property {boolean} [applied] Self-reported "Mark as Applied" state, persisted in `chrome.storage.local`
  *   via `metrics.js` and merged onto the item client-side (not part of the backend PostRecord).
  */

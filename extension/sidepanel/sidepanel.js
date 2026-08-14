@@ -29,6 +29,7 @@ const SAMPLE_ITEMS = [
     missingSkills: ["Docker"],
     category: "Deadlines",
     isOpportunity: true,
+    postedAt: new Date(Date.now() - 3 * 3600000).toISOString(),
   },
   {
     id: "sample-2",
@@ -53,6 +54,7 @@ const SAMPLE_ITEMS = [
     matchScore: 42,
     category: "Study Plans",
     isOpportunity: true,
+    postedAt: new Date(Date.now() - 20 * 86400000).toISOString(),
   },
 ];
 
@@ -236,6 +238,7 @@ function mapPostToItem(post) {
     missingSkills: [],
     category: post.category || "General",
     isOpportunity: post.is_opportunity === true,
+    postedAt: typeof post.posted_at === "string" ? post.posted_at : null,
     applied: false,
   };
 }
@@ -428,6 +431,42 @@ function buildMatchPill(item) {
   return pill;
 }
 
+// A listing this recently posted is worth flagging as newly available.
+const FRESH_MAX_HOURS = 48;
+// A listing this old has likely had time to fill/close, worth a nudge to apply soon.
+const STALE_MIN_HOURS = 14 * 24;
+
+/**
+ * Freshness read on a job/opportunity post's postedAt -- either an exact
+ * platform timestamp (X's own tweet time) or an approximation resolved
+ * client-side from a relative-age string (LinkedIn's "2d"/"1 hour ago").
+ * There's no way to know when a listing actually closes unless the post
+ * says so explicitly, so this is a proxy signal only: how long it's been up,
+ * not whether it's still open. Returns null for both unknown postedAt and
+ * the broad middle ground where neither read is confident enough to flag.
+ * @param {string|null} postedAt ISO 8601
+ * @returns {{label: string, className: string}|null}
+ */
+function freshnessInfo(postedAt) {
+  if (!postedAt) return null;
+  const posted = new Date(postedAt);
+  if (Number.isNaN(posted.getTime())) return null;
+
+  const ageHours = (Date.now() - posted.getTime()) / (60 * 60 * 1000);
+  if (ageHours <= FRESH_MAX_HOURS) return { label: "🌱 Freshly listed", className: "fresh" };
+  if (ageHours >= STALE_MIN_HOURS) return { label: "⏳ May close anytime -- apply soon", className: "stale" };
+  return null;
+}
+
+function buildFreshnessPill(item) {
+  const info = freshnessInfo(item.postedAt);
+  if (!info) return null;
+  const pill = document.createElement("span");
+  pill.className = `freshness-pill ${info.className}`;
+  pill.textContent = info.label;
+  return pill;
+}
+
 function renderList() {
   const items = filteredItems();
   els.list.innerHTML = "";
@@ -477,6 +516,11 @@ function renderList() {
     }
 
     head.appendChild(body);
+
+    if (item.isOpportunity) {
+      const freshnessPill = buildFreshnessPill(item);
+      if (freshnessPill) head.appendChild(freshnessPill);
+    }
 
     if (item.isOpportunity && typeof item.matchScore === "number") {
       head.appendChild(buildMatchPill(item));
