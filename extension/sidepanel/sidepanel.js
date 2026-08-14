@@ -9,6 +9,7 @@ const BACKEND_CALCULATE_MATCH_URL = "http://localhost:8000/calculate-match";
 const PROFILE_STORAGE_KEY = "profile";
 
 const ALL_CATEGORY = "All";
+const ALL_PLATFORM = "All";
 
 /** Sample data used only when no extension runtime is present (e.g. previewing the HTML directly). */
 const SAMPLE_ITEMS = [
@@ -30,6 +31,7 @@ const SAMPLE_ITEMS = [
     category: "Deadlines",
     isOpportunity: true,
     postedAt: new Date(Date.now() - 3 * 3600000).toISOString(),
+    platform: "twitter",
   },
   {
     id: "sample-2",
@@ -41,6 +43,7 @@ const SAMPLE_ITEMS = [
     dueDate: null,
     status: ItemStatus.NEW,
     category: "Books",
+    platform: "twitter",
   },
   {
     id: "sample-3",
@@ -55,6 +58,7 @@ const SAMPLE_ITEMS = [
     category: "Study Plans",
     isOpportunity: true,
     postedAt: new Date(Date.now() - 20 * 86400000).toISOString(),
+    platform: "twitter",
   },
 ];
 
@@ -63,6 +67,7 @@ const hasExtensionRuntime =
 
 const state = {
   activeTab: ALL_CATEGORY,
+  activePlatform: ALL_PLATFORM,
   query: "",
   items: [],
   sortByMatch: false,
@@ -73,6 +78,7 @@ const state = {
 
 const els = {
   tabs: document.getElementById("tabs"),
+  platformTabs: document.getElementById("platform-tabs"),
   list: document.getElementById("list"),
   emptyState: document.getElementById("empty-state"),
   search: document.getElementById("search-input"),
@@ -238,6 +244,7 @@ function mapPostToItem(post) {
     detail: deadline
       ? deadline.text
       : [post.author, platformLabel(post.platform)].filter(Boolean).join(" · "),
+    platform: post.platform,
     sourceUrl: post.url || "",
     createdAt: post.created_at,
     dueDate: deadline ? deadline.iso_date : null,
@@ -344,6 +351,7 @@ function filteredItems() {
   const q = state.query.trim().toLowerCase();
   const items = state.items.filter((item) => {
     if (state.activeTab !== ALL_CATEGORY && item.category !== state.activeTab) return false;
+    if (state.activePlatform !== ALL_PLATFORM && item.platform !== state.activePlatform) return false;
     if (item.status === ItemStatus.ARCHIVED) return false;
     if (!q) return true;
     return (
@@ -377,6 +385,50 @@ function renderTabs() {
       render();
     });
     els.tabs.appendChild(btn);
+  }
+}
+
+/** Builds platform filter pills (raw platform key + display label + count) from
+ * currently loaded items, "All" first. Derived client-side from state.items --
+ * unlike the category pills, this needs no backend round trip, since platform
+ * is already present on every loaded item -- so only platforms actually
+ * captured from show up as tabs. */
+function platformsFromItems(items) {
+  const counts = new Map();
+  for (const item of items) {
+    counts.set(item.platform, (counts.get(item.platform) || 0) + 1);
+  }
+  const entries = [...counts.entries()]
+    .map(([key, count]) => ({ key, label: platformLabel(key), count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  return [{ key: ALL_PLATFORM, label: ALL_PLATFORM, count: items.length }, ...entries];
+}
+
+/** Independent from the category tabs -- platform and category are separate,
+ * simultaneously-active filters (see filteredItems()), not mutually exclusive. */
+function renderPlatformTabs() {
+  const platforms = platformsFromItems(state.items);
+  if (!platforms.some((p) => p.key === state.activePlatform)) {
+    state.activePlatform = ALL_PLATFORM;
+  }
+
+  els.platformTabs.innerHTML = "";
+  for (const platform of platforms) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tab";
+    btn.role = "tab";
+    btn.dataset.platformKey = platform.key;
+    btn.setAttribute("aria-selected", String(platform.key === state.activePlatform));
+    btn.append(
+      document.createTextNode(platform.label),
+      Object.assign(document.createElement("span"), { className: "tab-count", textContent: platform.count })
+    );
+    btn.addEventListener("click", () => {
+      state.activePlatform = platform.key;
+      render();
+    });
+    els.platformTabs.appendChild(btn);
   }
 }
 
@@ -709,6 +761,7 @@ function renderStats() {
 
 function render() {
   renderStats();
+  renderPlatformTabs();
   renderTabs();
   renderList();
 }

@@ -51,6 +51,9 @@ export const MessageType = Object.freeze({
  * @property {"deadline"|"book"|"study_plan"} type
  * @property {string} title
  * @property {string} detail          Short secondary line (due date text, author, plan summary).
+ * @property {string} platform        Raw backend `platform` value (e.g. "twitter", "linkedin",
+ *   "web_selection") the post was captured from -- see PLATFORM_LABELS in sidepanel.js for the
+ *   display label. Filterable independently of category (see the platform tab row).
  * @property {string} sourceUrl       Origin URL the item was captured from.
  * @property {string} createdAt       ISO 8601 timestamp.
  * @property {string|null} dueDate    ISO 8601 timestamp, deadlines only.
