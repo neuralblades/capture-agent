@@ -362,9 +362,10 @@ function formatDetail(item) {
 
 /**
  * Actions to render for a card: the static per-type list, plus an "Apply /
- * Open Form" action when an external application link was extracted, plus a
- * "Draft Email" action whenever a contact email was detected on the post and
- * the type-based list doesn't already include one.
+ * Open Form" (or, for non-opportunity posts, plain "Open Link") action when
+ * an external link was extracted, plus a "Draft Email" action whenever a
+ * contact email was detected on the post and the type-based list doesn't
+ * already include one.
  * @param {ReturnType<typeof mapPostToItem>} item
  */
 function actionsForItem(item) {
@@ -373,7 +374,12 @@ function actionsForItem(item) {
   if (item.applyUrl) {
     const openIdx = actions.findIndex((a) => a.action === ActionType.OPEN_SOURCE);
     const insertAt = openIdx === -1 ? actions.length : openIdx;
-    actions.splice(insertAt, 0, { action: ActionType.APPLY_FORM, label: "Apply / Open Form" });
+    // Only opportunity posts (job/hackathon/scholarship/freelance) have their
+    // link framed as an application form -- for everything else the
+    // extracted link could be anything (a product page, an article, ...),
+    // so labeling it "Apply / Open Form" would be misleading.
+    const label = item.isOpportunity ? "Apply / Open Form" : "Open Link";
+    actions.splice(insertAt, 0, { action: ActionType.APPLY_FORM, label });
   }
 
   const hasDraftEmail = actions.some(({ action }) => action === ActionType.DRAFT_EMAIL);
@@ -571,7 +577,8 @@ async function runAction(item, action, triggerEl) {
   if (action === "open_source" || action === ActionType.APPLY_FORM) {
     const url = action === ActionType.APPLY_FORM ? item.applyUrl : item.sourceUrl;
     if (!url) {
-      showToast(action === ActionType.APPLY_FORM ? "No application link available" : "No source link available", true);
+      const applyMissingMsg = item.isOpportunity ? "No application link available" : "No link available";
+      showToast(action === ActionType.APPLY_FORM ? applyMissingMsg : "No source link available", true);
       return;
     }
     if (hasExtensionRuntime && chrome.tabs?.create) {
