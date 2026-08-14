@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS posts (
     contact_email TEXT,
     action_type TEXT NOT NULL DEFAULT 'none',
     category TEXT NOT NULL DEFAULT 'General',
+    is_opportunity INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -58,6 +59,7 @@ _COLUMN_MIGRATIONS: list[tuple[str, str]] = [
     ("action_type", "ALTER TABLE posts ADD COLUMN action_type TEXT NOT NULL DEFAULT 'none'"),
     ("match_score", "ALTER TABLE posts ADD COLUMN match_score INTEGER"),
     ("category", "ALTER TABLE posts ADD COLUMN category TEXT NOT NULL DEFAULT 'General'"),
+    ("is_opportunity", "ALTER TABLE posts ADD COLUMN is_opportunity INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -85,15 +87,16 @@ def insert_post(
     contact_email: Optional[str] = None,
     action_type: str = "none",
     category: str = "General",
+    is_opportunity: bool = False,
 ) -> int:
     with get_connection() as conn:
         cursor = conn.execute(
             """
             INSERT INTO posts (
                 platform, author, content, url, captured_at, summary, tags,
-                action_required, deadlines, external_url, contact_email, action_type, category
+                action_required, deadlines, external_url, contact_email, action_type, category, is_opportunity
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 platform,
@@ -109,6 +112,7 @@ def insert_post(
                 contact_email,
                 action_type,
                 category,
+                int(is_opportunity),
             ),
         )
         return cursor.lastrowid
@@ -131,6 +135,7 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "action_type": row["action_type"],
         "match_score": row["match_score"],
         "category": row["category"],
+        "is_opportunity": bool(row["is_opportunity"]),
         "created_at": row["created_at"],
     }
 

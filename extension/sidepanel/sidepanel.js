@@ -28,6 +28,7 @@ const SAMPLE_ITEMS = [
     matchingSkills: ["Python", "FastAPI"],
     missingSkills: ["Docker"],
     category: "Deadlines",
+    isOpportunity: true,
   },
   {
     id: "sample-2",
@@ -51,6 +52,7 @@ const SAMPLE_ITEMS = [
     status: ItemStatus.NEW,
     matchScore: 42,
     category: "Study Plans",
+    isOpportunity: true,
   },
 ];
 
@@ -218,6 +220,7 @@ function mapPostToItem(post) {
     matchingSkills: [],
     missingSkills: [],
     category: post.category || "General",
+    isOpportunity: post.is_opportunity === true,
     applied: false,
   };
 }
@@ -261,7 +264,9 @@ async function calculateMatchScores() {
   const resumeText = (profile.resumeText || "").trim();
   if (!resumeText) return;
 
-  const pending = state.items.filter((item) => item.postId != null && item.matchScore == null);
+  const pending = state.items.filter(
+    (item) => item.postId != null && item.isOpportunity && item.matchScore == null
+  );
   await Promise.all(pending.map((item) => calculateMatchForItem(item, resumeText)));
 }
 
@@ -452,7 +457,7 @@ function renderList() {
 
     head.appendChild(body);
 
-    if (typeof item.matchScore === "number") {
+    if (item.isOpportunity && typeof item.matchScore === "number") {
       head.appendChild(buildMatchPill(item));
     }
 

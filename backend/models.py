@@ -53,6 +53,10 @@ class ExtractionResult(BaseModel):
     action_type: ActionType = Field(
         "none", description="How the reader is expected to act: applying via a form, emailing a contact, following a general link, or no action"
     )
+    is_opportunity: bool = Field(
+        False,
+        description="Whether this post represents a job/application-type opportunity (job, hackathon, scholarship, freelance gig) with a clear next action the user could apply/respond to -- false for books, articles, general commentary, etc.",
+    )
 
 
 class ProfileContext(BaseModel):
@@ -157,6 +161,7 @@ class PostRecord(BaseModel):
     external_url: Optional[str] = None
     contact_email: Optional[str] = None
     action_type: ActionType = "none"
+    is_opportunity: bool = False
     match_score: Optional[int] = Field(
         None, ge=0, le=100, description="Resume-to-post match score last computed via /calculate-match"
     )

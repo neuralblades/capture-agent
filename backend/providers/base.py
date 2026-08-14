@@ -17,6 +17,7 @@ For each post:
 - Find any third-party application or action URL mentioned in the text itself (e.g. a Google Form, Lever, Greenhouse, Workable, or Typeform link). This is distinct from the source post's own URL, which is supplied separately by the caller and never appears in the post text — do not invent one. Put it in external_url, or null if none is mentioned.
 - Find any recruiter or founder contact email address mentioned in the text (e.g. "email me at jane@acme.com"). Put it in contact_email, or null if none is mentioned.
 - Classify action_type based on what you found: "job_form" if external_url points to a job application form/portal, "cold_email" if a contact_email is given and there's no application form link, "general_link" if there's a third-party link that isn't a job application (e.g. an event page or registration form), or "none" if neither an external_url nor a contact_email was found.
+- Set is_opportunity to true only if the post represents something the user could apply/respond to with a clear next action -- a job posting, hackathon, scholarship, or freelance gig. Set it to false for books, articles, general commentary, and anything else without a concrete apply/respond action.
 
 Reference date (when this post was captured; resolve all relative dates against it): {reference_date}"""
 
