@@ -11,9 +11,10 @@ import contextlib
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Literal
 
 import feedparser
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 import database
@@ -34,7 +35,10 @@ from models import (
     MapFormFieldsRequest,
     MapFormFieldsResponse,
     MatchResult,
+    PlatformCount,
     PostRecord,
+    StatsOverview,
+    TrendBucket,
 )
 
 
@@ -149,6 +153,20 @@ def calculate_match(request: CalculateMatchRequest) -> MatchResult:
 @app.get("/categories", response_model=list[CategoryCount])
 def get_categories() -> list[CategoryCount]:
     return [CategoryCount(**row) for row in database.category_counts()]
+
+
+@app.get("/stats/overview", response_model=StatsOverview)
+def get_stats_overview(
+    days: int = Query(30, ge=1, description="Size of the trailing trend window, in days"),
+    bucket: Literal["day", "week"] = Query("day", description="Trend bucket granularity"),
+) -> StatsOverview:
+    return StatsOverview(
+        platform_counts=[PlatformCount(**row) for row in database.platform_counts()],
+        category_counts=[CategoryCount(**row) for row in database.category_counts()],
+        trend=[TrendBucket(**row) for row in database.trend_counts(days=days, bucket=bucket)],
+        window_days=days,
+        bucket=bucket,
+    )
 
 
 @app.post("/map-form-fields", response_model=MapFormFieldsResponse)

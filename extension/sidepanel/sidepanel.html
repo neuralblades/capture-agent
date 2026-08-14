@@ -46,6 +46,11 @@
         </div>
       </section>
 
+      <nav id="view-tabs" class="view-tabs" role="tablist" aria-label="View">
+        <button id="view-tab-list" type="button" class="view-tab" role="tab" aria-selected="true">List</button>
+        <button id="view-tab-overview" type="button" class="view-tab" role="tab" aria-selected="false">Overview</button>
+      </nav>
+
       <nav id="platform-tabs" class="tabs" role="tablist" aria-label="Capture platforms"></nav>
 
       <nav id="tabs" class="tabs" role="tablist" aria-label="Capture categories"></nav>
@@ -56,6 +61,34 @@
         <p class="empty-title">Nothing here yet</p>
         <p class="empty-sub">Captures from X.com will show up in this panel.</p>
       </div>
+
+      <section id="overview-view" class="overview" role="tabpanel" hidden>
+        <div id="overview-empty" class="empty-state" hidden>
+          <p class="empty-title">Nothing captured yet</p>
+          <p class="empty-sub">Stats will show up here once you capture something.</p>
+        </div>
+        <div id="overview-content" hidden>
+          <p id="overview-total" class="overview-total"></p>
+
+          <div class="overview-block">
+            <h3 class="overview-heading">By Platform</h3>
+            <div id="overview-platform-bars" class="bar-list"></div>
+          </div>
+
+          <div class="overview-block">
+            <h3 class="overview-heading">By Category</h3>
+            <div id="overview-category-bars" class="bar-list"></div>
+          </div>
+
+          <div class="overview-block">
+            <div class="overview-heading-row">
+              <h3 class="overview-heading">Capture Trend</h3>
+              <span id="overview-trend-range" class="overview-trend-range"></span>
+            </div>
+            <div id="overview-trend" class="trend-chart" aria-label="Captures per day, last 30 days"></div>
+          </div>
+        </div>
+      </section>
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="assertive" hidden></div>

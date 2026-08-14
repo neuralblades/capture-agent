@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -241,6 +241,79 @@ def test_category_counts_orders_by_count_desc_then_name(isolated_db):
 
 def test_category_counts_empty_db_returns_only_all_zero(isolated_db):
     assert database.category_counts() == [{"name": "All", "count": 0}]
+
+
+def test_platform_counts_includes_all_total_and_per_platform_counts(isolated_db):
+    _insert(platform="twitter")
+    _insert(platform="twitter")
+    _insert(platform="linkedin")
+
+    counts = database.platform_counts()
+    assert counts[0] == {"name": "All", "count": 3}
+    assert {"name": "twitter", "count": 2} in counts
+    assert {"name": "linkedin", "count": 1} in counts
+
+
+def test_platform_counts_orders_by_count_desc_then_name(isolated_db):
+    _insert(platform="web_selection")
+    _insert(platform="linkedin")
+    _insert(platform="linkedin")
+
+    counts = database.platform_counts()
+    assert [c["name"] for c in counts] == ["All", "linkedin", "web_selection"]
+
+
+def test_platform_counts_empty_db_returns_only_all_zero(isolated_db):
+    assert database.platform_counts() == [{"name": "All", "count": 0}]
+
+
+def test_trend_counts_zero_fills_default_30_day_window(isolated_db):
+    trend = database.trend_counts()
+
+    assert len(trend) == 30
+    assert all(b["count"] == 0 for b in trend)
+    today = datetime.now(timezone.utc).date()
+    assert trend[-1]["bucket"] == today.isoformat()
+    assert trend[0]["bucket"] == (today - timedelta(days=29)).isoformat()
+
+
+def test_trend_counts_buckets_by_captured_at_day(isolated_db):
+    now = datetime.now(timezone.utc)
+    _insert(captured_at=now.isoformat())
+    _insert(captured_at=now.isoformat())
+    _insert(captured_at=(now - timedelta(days=1)).isoformat())
+
+    trend = database.trend_counts(days=30)
+    by_bucket = {b["bucket"]: b["count"] for b in trend}
+    assert by_bucket[now.date().isoformat()] == 2
+    assert by_bucket[(now - timedelta(days=1)).date().isoformat()] == 1
+
+
+def test_trend_counts_excludes_captures_older_than_window_no_off_by_one(isolated_db):
+    now = datetime.now(timezone.utc)
+    # Exactly at the boundary (today - (days-1)): must be included.
+    _insert(captured_at=(now - timedelta(days=6)).isoformat())
+    # One day older than the boundary: must be excluded.
+    _insert(captured_at=(now - timedelta(days=7)).isoformat())
+
+    trend = database.trend_counts(days=7)
+    assert len(trend) == 7
+    assert sum(b["count"] for b in trend) == 1
+    assert trend[0]["bucket"] == (now.date() - timedelta(days=6)).isoformat()
+
+
+def test_trend_counts_week_bucket_keys_by_monday_and_covers_window(isolated_db):
+    now = datetime.now(timezone.utc)
+    _insert(captured_at=now.isoformat())
+
+    trend = database.trend_counts(days=14, bucket="week")
+    for b in trend:
+        bucket_date = datetime.fromisoformat(b["bucket"]).date()
+        assert bucket_date.weekday() == 0  # Monday
+
+    current_week_monday = (now.date() - timedelta(days=now.date().weekday())).isoformat()
+    by_bucket = {b["bucket"]: b["count"] for b in trend}
+    assert by_bucket[current_week_monday] == 1
 
 
 def test_connection_is_closed_after_use(isolated_db):

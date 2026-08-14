@@ -475,6 +475,69 @@ def test_categories_aggregates_across_posts(client):
     assert {"name": "Finance", "count": 1} in body
 
 
+def test_stats_overview_empty_db(client):
+    resp = client.get("/stats/overview")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["platform_counts"] == [{"name": "All", "count": 0}]
+    assert body["category_counts"] == [{"name": "All", "count": 0}]
+    assert body["window_days"] == 30
+    assert body["bucket"] == "day"
+    assert len(body["trend"]) == 30
+    assert sum(b["count"] for b in body["trend"]) == 0
+
+
+def test_stats_overview_platform_and_category_counts_match_underlying_posts(client):
+    ai_result = FAKE_RESULT.model_copy(update={"category": "AI Tools"})
+    finance_result = FAKE_RESULT.model_copy(update={"category": "Finance"})
+
+    with patch("main.extract_post_data", return_value=ai_result):
+        client.post("/capture", json={"platform": "twitter", "content": "post 1"})
+        client.post("/capture", json={"platform": "twitter", "content": "post 2"})
+    with patch("main.extract_post_data", return_value=finance_result):
+        client.post("/capture", json={"platform": "linkedin", "content": "post 3"})
+
+    resp = client.get("/stats/overview")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["platform_counts"][0] == {"name": "All", "count": 3}
+    assert {"name": "twitter", "count": 2} in body["platform_counts"]
+    assert {"name": "linkedin", "count": 1} in body["platform_counts"]
+
+    assert body["category_counts"][0] == {"name": "All", "count": 3}
+    assert {"name": "AI Tools", "count": 2} in body["category_counts"]
+    assert {"name": "Finance", "count": 1} in body["category_counts"]
+
+    # Spot-check against the plain listing endpoints the card list/tabs use.
+    posts = client.get("/posts").json()
+    assert len(posts) == body["platform_counts"][0]["count"]
+    categories = client.get("/categories").json()
+    assert categories == body["category_counts"]
+
+
+def test_stats_overview_respects_days_and_bucket_query_params(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        client.post("/capture", json={"platform": "twitter", "content": "post 1"})
+
+    resp = client.get("/stats/overview", params={"days": 7, "bucket": "week"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["window_days"] == 7
+    assert body["bucket"] == "week"
+    assert sum(b["count"] for b in body["trend"]) == 1
+
+
+def test_stats_overview_rejects_invalid_bucket(client):
+    resp = client.get("/stats/overview", params={"bucket": "month"})
+    assert resp.status_code == 422
+
+
+def test_stats_overview_rejects_non_positive_days(client):
+    resp = client.get("/stats/overview", params={"days": 0})
+    assert resp.status_code == 422
+
+
 def test_map_form_fields_returns_mappings(client):
     fake_mappings = [
         FieldMapping(index=0, value="opt-yes"),

@@ -201,6 +201,30 @@ class CategoryCount(BaseModel):
     count: int = Field(..., description="Number of stored posts in this category")
 
 
+class PlatformCount(BaseModel):
+    """A platform and how many stored posts currently carry it."""
+
+    name: str = Field(..., description="Platform name (e.g. 'twitter', 'linkedin'), or 'All' for the total across every post")
+    count: int = Field(..., description="Number of stored posts from this platform")
+
+
+class TrendBucket(BaseModel):
+    """Capture count for one day/week bucket in a stats trend."""
+
+    bucket: str = Field(..., description="ISO 8601 date. For 'week' bucketing, the Monday that starts the week")
+    count: int = Field(..., description="Number of posts captured in this bucket")
+
+
+class StatsOverview(BaseModel):
+    """Read-only aggregation over stored posts: volume by platform, by category, and over time."""
+
+    platform_counts: list[PlatformCount] = Field(..., description="Post counts grouped by platform, 'All' first")
+    category_counts: list[CategoryCount] = Field(..., description="Post counts grouped by category, 'All' first")
+    trend: list[TrendBucket] = Field(..., description="Zero-filled day/week bucketed capture counts over the requested window")
+    window_days: int = Field(..., description="Size of the trailing window (in days) the trend covers")
+    bucket: Literal["day", "week"] = Field(..., description="Bucket granularity used for the trend")
+
+
 class GenerateEmailRequest(BaseModel):
     """Request to draft a cold outreach email for a captured post."""
 
