@@ -113,13 +113,11 @@ const GOOGLE_FORM_PATTERN = /forms\.gle|docs\.google\.com\/forms/i;
 
 /**
  * Pulls candidate external URLs off a backend post: explicit fields the
- * backend may set (external_url, links, metadata.*) plus anything found by
- * scanning the raw content text. The post's own sourceUrl is excluded since
- * that's already reachable via the "Open" action, and each source platform's
- * own link-shortener domain (t.co on X, lnkd.in on LinkedIn) is excluded
- * everywhere since it's just that platform's redirect wrapper around the
- * post's own content, not a distinct, informative link -- showing it as a
- * pill is just noise, not a genuine extra link.
+ * backend may set (external_url, links, metadata.*) -- trusted, since the
+ * backend only populates these when it's confident they're the real
+ * application/action link -- plus anything found by scanning the raw
+ * content text, which gets no such vetting. The post's own sourceUrl is
+ * excluded since that's already reachable via the "Open" action.
  * @param {Record<string, unknown>} post
  * @returns {string[]}
  */
@@ -132,7 +130,13 @@ function isHttpUrl(value) {
   }
 }
 
-/** Known platform-internal link-shortener domains: X's t.co, LinkedIn's lnkd.in. Neither points to a distinct external resource in its own right. */
+/**
+ * Known platform-internal link-shortener domains: X's t.co, LinkedIn's
+ * lnkd.in. Both platforms route *every* external link a user posts through
+ * these -- including genuine application links -- so a shortener domain on
+ * its own isn't a sign of noise; it's only excluded from the raw
+ * regex-scanned content below, where there's no other signal to go on.
+ */
 const LINK_SHORTENER_HOSTS = new Set(["t.co", "lnkd.in"]);
 
 function isPlatformShortLink(url) {
@@ -144,30 +148,38 @@ function isPlatformShortLink(url) {
 }
 
 function extractExternalUrls(post) {
-  const urls = new Set();
+  const trustedUrls = new Set();
 
-  if (isHttpUrl(post.external_url)) urls.add(post.external_url);
+  if (isHttpUrl(post.external_url)) trustedUrls.add(post.external_url);
 
   if (Array.isArray(post.links)) {
     for (const link of post.links) {
-      if (isHttpUrl(link)) urls.add(link);
-      else if (link && isHttpUrl(link.url)) urls.add(link.url);
+      if (isHttpUrl(link)) trustedUrls.add(link);
+      else if (link && isHttpUrl(link.url)) trustedUrls.add(link.url);
     }
   }
 
   if (post.metadata && typeof post.metadata === "object") {
     const metaUrl = post.metadata.apply_url || post.metadata.form_url || post.metadata.link || post.metadata.url;
-    if (isHttpUrl(metaUrl)) urls.add(metaUrl);
+    if (isHttpUrl(metaUrl)) trustedUrls.add(metaUrl);
   }
 
+  // A blind sweep for anything URL-shaped in the raw post text, with no
+  // semantic vetting behind it -- unlike the trusted fields above, a
+  // platform link-shortener found only here is filtered out as noise
+  // (e.g. a decorative/self-referential link with no real destination
+  // info to offer beyond what's already shown).
+  const scannedUrls = new Set();
   if (typeof post.content === "string") {
     for (const match of post.content.match(URL_PATTERN) || []) {
-      urls.add(match.replace(/[.,;:]+$/, ""));
+      const url = match.replace(/[.,;:]+$/, "");
+      if (!isPlatformShortLink(url)) scannedUrls.add(url);
     }
   }
 
+  const urls = new Set([...trustedUrls, ...scannedUrls]);
   urls.delete(post.url);
-  return Array.from(urls).filter((url) => !isPlatformShortLink(url));
+  return Array.from(urls);
 }
 
 /**
