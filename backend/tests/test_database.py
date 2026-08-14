@@ -176,6 +176,7 @@ def test_init_db_migrates_legacy_table_missing_new_columns(tmp_path, monkeypatch
     assert record["external_url"] is None
     assert record["match_score"] is None
     assert record["is_opportunity"] is False
+    assert record["posted_at"] is None
 
 
 def test_init_db_is_idempotent_on_already_migrated_table(isolated_db):
@@ -206,6 +207,16 @@ def test_is_opportunity_defaults_to_false(isolated_db):
 def test_is_opportunity_round_trips(isolated_db):
     post_id = _insert(is_opportunity=True)
     assert database.get_post(post_id)["is_opportunity"] is True
+
+
+def test_posted_at_defaults_to_none(isolated_db):
+    post_id = _insert()
+    assert database.get_post(post_id)["posted_at"] is None
+
+
+def test_posted_at_round_trips(isolated_db):
+    post_id = _insert(posted_at="2026-08-10T09:00:00+00:00")
+    assert database.get_post(post_id)["posted_at"] == "2026-08-10T09:00:00+00:00"
 
 
 def test_category_counts_includes_all_total_and_per_category_counts(isolated_db):

@@ -25,6 +25,17 @@
   const REACTION_BUTTON_PREFIX = 'Reaction button state:';
   const COMPANY_ARIA_PREFIX = 'Company, ';
 
+  // Matches LinkedIn's abbreviated relative-age indicator on a feed post --
+  // its own isolated <p> reading e.g. "1d •", "18h •", "4m", or
+  // "1h • Edited •" -- and captures the numeric value (group 1) and unit
+  // (group 2: m/h/d/w/mo/y). Verified live against LinkedIn's feed markup.
+  const RELATIVE_AGE_ABBREV_RE = /^(\d+)\s*(mo|[mhdwy])\s*(?:[•·]\s*)?(?:edited\s*(?:[•·]\s*)?)?$/i;
+
+  // Matches LinkedIn's spelled-out relative-age text on a job listing's top
+  // card, e.g. "1 hour ago", "2 weeks ago". Verified live: this phrasing
+  // only ever appears once per page, for the currently open job.
+  const RELATIVE_AGE_WORDS_RE = /^(\d+)\s*(minute|hour|day|week|month|year)s?\s*ago\b/i;
+
   // UI chrome that shows up as <p> text alongside the real post body (reaction
   // counts, "Promoted", connection-degree badges, etc.) -- filtered out when
   // hunting for the actual post text among a card's paragraphs.
@@ -39,10 +50,52 @@
     /\band\s+\d+\s+others?$/i,
     /^\s*•\s*$/,
     /^[\d,]+\s+followers?$/i,
-    /^\d+\s*(h|d|w|mo|y)\s*(•|·)?\s*(edited)?\s*•?\s*$/i,
+    RELATIVE_AGE_ABBREV_RE,
   ];
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  const MS_PER_UNIT = {
+    m: 60 * 1000,
+    minute: 60 * 1000,
+    h: 60 * 60 * 1000,
+    hour: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+    day: 24 * 60 * 60 * 1000,
+    w: 7 * 24 * 60 * 60 * 1000,
+    week: 7 * 24 * 60 * 60 * 1000,
+    mo: 30 * 24 * 60 * 60 * 1000,
+    month: 30 * 24 * 60 * 60 * 1000,
+    y: 365 * 24 * 60 * 60 * 1000,
+    year: 365 * 24 * 60 * 60 * 1000,
+  };
+
+  /**
+   * @param {number} value
+   * @param {string} unit One of MS_PER_UNIT's keys (case-insensitive).
+   * @returns {string} ISO 8601 timestamp approximating when the post/listing went up.
+   */
+  function relativeAgeToIso(value, unit) {
+    const msPerUnit = MS_PER_UNIT[unit.toLowerCase()];
+    return new Date(Date.now() - value * msPerUnit).toISOString();
+  }
+
+  /**
+   * An element's own direct text, excluding any nested elements' text --
+   * e.g. for `<span>1 hour ago<span>· 51 applicants</span></span>` this
+   * returns just "1 hour ago". Needed because the relative-age text on job
+   * listings sits inside a wrapper that also holds unrelated sibling text
+   * (location, applicant count) once you look at the full subtree.
+   * @param {Element} el
+   * @returns {string}
+   */
+  function ownText(el) {
+    let text = '';
+    el.childNodes.forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE) text += node.textContent;
+    });
+    return text.replace(/\s+/g, ' ').trim();
+  }
 
   /**
    * @param {Element|null} el
@@ -113,10 +166,10 @@
   /**
    * Sends a CAPTURE_POST message for the given fields and reflects the
    * result in the button's label/state, mirroring x.com's capture button UX.
-   * @param {{platform: string, author: string|null, text: string, url: string, idleLabel: string}} params
+   * @param {{platform: string, author: string|null, text: string, url: string, idleLabel: string, postedAt: string|null}} params
    * @param {HTMLButtonElement} button
    */
-  function sendCapture({ platform, author, text, url, idleLabel }, button) {
+  function sendCapture({ platform, author, text, url, idleLabel, postedAt }, button) {
     if (!text || button.disabled) return;
 
     if (!chrome.runtime?.id) {
@@ -133,7 +186,7 @@
       {
         type: 'CAPTURE_POST',
         platform,
-        payload: { author, text, url },
+        payload: { author, text, url, postedAt: postedAt ?? null },
         capturedAt: new Date().toISOString(),
       },
       (response) => {
@@ -219,6 +272,23 @@
   }
 
   /**
+   * Resolves a feed post's approximate posted-at time from its "1d •" /
+   * "18h •" / "4m" style relative-age paragraph -- the exact same fragment
+   * POST_TEXT_DENYLIST filters out of post-body candidates, just parsed
+   * here instead of discarded. Approximate: LinkedIn only exposes a coarse
+   * relative age here, not an exact timestamp.
+   * @param {Element} card
+   * @returns {string|null}
+   */
+  function getFeedPostedAt(card) {
+    for (const p of card.querySelectorAll('p')) {
+      const match = RELATIVE_AGE_ABBREV_RE.exec(cleanText(p));
+      if (match) return relativeAgeToIso(Number(match[1]), match[2]);
+    }
+    return null;
+  }
+
+  /**
    * The action row (Like/Comment/Repost/Send) is found by climbing from the
    * Like button until the ancestor holds all of them.
    * @param {Element} card
@@ -255,12 +325,13 @@
     if (!text) return;
 
     const url = getPostUrl(card);
+    const postedAt = getFeedPostedAt(card);
 
     const button = createButton('Capture');
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      sendCapture({ platform: 'linkedin', author, text, url, idleLabel: 'Capture' }, button);
+      sendCapture({ platform: 'linkedin', author, text, url, idleLabel: 'Capture', postedAt }, button);
     });
 
     actionBar.appendChild(button);
@@ -291,6 +362,25 @@
     return container ? cleanText(container) : '';
   }
 
+  /**
+   * Resolves the currently open job listing's approximate posted-at time
+   * from its spelled-out "1 hour ago" / "2 weeks ago" tertiary text (part of
+   * the "<location> · <age> · <applicant count>" line under the title).
+   * That phrasing only ever appears once per page for the open job -- same
+   * "one job's own detail pane at a time" property findJobActionsBar's
+   * comment relies on -- so an unscoped document-wide lookup is safe here
+   * too. Approximate: LinkedIn only exposes a coarse relative age, not an
+   * exact timestamp.
+   * @returns {string|null}
+   */
+  function getJobPostedAt() {
+    for (const el of document.querySelectorAll('span, strong')) {
+      const match = RELATIVE_AGE_WORDS_RE.exec(ownText(el));
+      if (match) return relativeAgeToIso(Number(match[1]), match[2]);
+    }
+    return null;
+  }
+
   function injectIntoJobTopCard() {
     const actionsBar = findJobActionsBar();
     if (!actionsBar || actionsBar.getAttribute(INJECTED_ATTR) === 'true') return;
@@ -307,13 +397,14 @@
     const company = cleanText(document.querySelector(`[aria-label^="${COMPANY_ARIA_PREFIX}"]`));
     const author = [title, company].filter(Boolean).join(' @ ') || null;
     const url = titleLink ? titleLink.href : location.href;
+    const postedAt = getJobPostedAt();
 
     const button = createButton('Capture job');
     button.classList.add('capture-agent-btn-linkedin-job');
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      sendCapture({ platform: 'linkedin', author, text: description, url, idleLabel: 'Capture job' }, button);
+      sendCapture({ platform: 'linkedin', author, text: description, url, idleLabel: 'Capture job', postedAt }, button);
     });
 
     actionsBar.appendChild(button);

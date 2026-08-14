@@ -43,6 +43,9 @@ async function capturePost(message) {
     content: payload.text,
     url: payload.url,
     capturedAt,
+    // The tweet's own <time datetime> timestamp -- exact, unlike LinkedIn's
+    // relative-age text -- so freshness in the side panel can be precise here.
+    postedAt: payload.timestamp || null,
   });
 }
 
@@ -50,7 +53,7 @@ async function capturePost(message) {
  * Handles CAPTURE_POST messages from content scripts other than x.com's
  * (e.g. linkedin.js), whose payload is already a flat {author, text, url}
  * shape rather than x.com's nested author object.
- * @param {{platform: string, payload: {author?: string|null, text: string, url?: string|null}, capturedAt: string}} message
+ * @param {{platform: string, payload: {author?: string|null, text: string, url?: string|null, postedAt?: string|null}, capturedAt: string}} message
  * @returns {Promise<unknown>}
  */
 async function captureGenericPost(message) {
@@ -62,6 +65,9 @@ async function captureGenericPost(message) {
     content: payload.text,
     url: payload.url ?? null,
     capturedAt,
+    // Resolved client-side from the platform's own relative-age text (e.g.
+    // LinkedIn's "2d"/"1 hour ago") -- an approximation, unlike X's exact timestamp.
+    postedAt: payload.postedAt ?? null,
   });
 }
 

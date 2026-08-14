@@ -21,6 +21,12 @@ class CapturedPost(BaseModel):
     captured_at: Optional[datetime] = Field(
         None, description="Client-side capture timestamp; defaults to server time if omitted"
     )
+    posted_at: Optional[datetime] = Field(
+        None,
+        description="When the source post/listing was originally published, if the platform exposes it "
+        "(e.g. a tweet's own timestamp, or a LinkedIn post/job's relative age resolved client-side). "
+        "Distinct from captured_at, which is when the user captured it. Null when unknown.",
+    )
 
 
 class Deadline(BaseModel):
@@ -162,6 +168,7 @@ class PostRecord(BaseModel):
     contact_email: Optional[str] = None
     action_type: ActionType = "none"
     is_opportunity: bool = False
+    posted_at: Optional[str] = None
     match_score: Optional[int] = Field(
         None, ge=0, le=100, description="Resume-to-post match score last computed via /calculate-match"
     )

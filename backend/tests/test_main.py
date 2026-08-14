@@ -53,6 +53,7 @@ def test_capture_persists_and_returns_extraction(client):
     assert body["action_type"] == "none"
     assert body["match_score"] is None
     assert body["is_opportunity"] is False
+    assert body["posted_at"] is None
 
 
 def test_capture_returns_and_persists_external_url_and_contact_email(client):
@@ -149,6 +150,33 @@ def test_capture_defaults_captured_at_when_omitted(client):
     called_captured_at = mock_extract.call_args.args[1]
     assert isinstance(called_captured_at, datetime)
     assert called_captured_at.tzinfo is not None
+
+
+def test_capture_persists_and_returns_posted_at(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        resp = client.post(
+            "/capture",
+            json={
+                "platform": "linkedin",
+                "content": "content here",
+                "posted_at": "2026-08-10T09:00:00+00:00",
+            },
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["posted_at"] == "2026-08-10T09:00:00+00:00"
+
+    stored = client.get(f"/posts/{body['id']}").json()
+    assert stored["posted_at"] == "2026-08-10T09:00:00+00:00"
+
+
+def test_capture_posted_at_defaults_to_none_when_omitted(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        resp = client.post("/capture", json={"platform": "twitter", "content": "no posted_at here"})
+
+    assert resp.status_code == 200
+    assert resp.json()["posted_at"] is None
 
 
 def test_capture_returns_502_on_extraction_failure(client):
