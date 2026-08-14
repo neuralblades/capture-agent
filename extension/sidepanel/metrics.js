@@ -5,6 +5,11 @@
  * -- plus which items have been self-reported as "applied", so the sidepanel
  * can render a conversion funnel without a backend round trip.
  *
+ * `captures_total` only counts posts classified as job/application-type
+ * opportunities (see `is_opportunity` on the backend PostRecord) -- general
+ * captures like book recommendations or articles aren't part of the
+ * application funnel and would otherwise deflate the conversion rate.
+ *
  * Importable from any extension context (service worker or sidepanel page);
  * falls back to an in-memory store when `chrome.storage` isn't available
  * (e.g. previewing sidepanel.html directly outside the extension runtime).
