@@ -8,6 +8,7 @@ FAKE_RESULT = ExtractionResult(
     tags=["design", "feedback"],
     action_required=True,
     deadlines=[Deadline(text="by Friday", iso_date="2026-08-14", confidence=0.9)],
+    is_opportunity=False,
 )
 
 FAKE_JOB_RESULT = ExtractionResult(
@@ -18,6 +19,7 @@ FAKE_JOB_RESULT = ExtractionResult(
     external_url="https://forms.gle/abc123",
     contact_email="jane@acme.com",
     action_type="job_form",
+    is_opportunity=True,
 )
 
 
@@ -50,6 +52,7 @@ def test_capture_persists_and_returns_extraction(client):
     assert body["contact_email"] is None
     assert body["action_type"] == "none"
     assert body["match_score"] is None
+    assert body["is_opportunity"] is False
 
 
 def test_capture_returns_and_persists_external_url_and_contact_email(client):
@@ -67,6 +70,7 @@ def test_capture_returns_and_persists_external_url_and_contact_email(client):
     assert body["external_url"] == "https://forms.gle/abc123"
     assert body["contact_email"] == "jane@acme.com"
     assert body["action_type"] == "job_form"
+    assert body["is_opportunity"] is True
 
     get_resp = client.get(f"/posts/{body['id']}")
     assert get_resp.status_code == 200
@@ -74,6 +78,7 @@ def test_capture_returns_and_persists_external_url_and_contact_email(client):
     assert stored["external_url"] == "https://forms.gle/abc123"
     assert stored["contact_email"] == "jane@acme.com"
     assert stored["action_type"] == "job_form"
+    assert stored["is_opportunity"] is True
 
 
 def test_capture_tags_web_selection_platform(client):
@@ -382,7 +387,7 @@ def test_calculate_match_requires_non_empty_resume_text(client):
 
 
 def test_calculate_match_returns_502_on_failure(client):
-    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+    with patch("main.extract_post_data", return_value=FAKE_JOB_RESULT):
         create_resp = client.post("/capture", json={"platform": "twitter", "content": "content"})
     post_id = create_resp.json()["id"]
 
@@ -391,6 +396,21 @@ def test_calculate_match_returns_502_on_failure(client):
 
     assert resp.status_code == 502
     assert "groq down" in resp.json()["detail"]
+
+
+def test_calculate_match_returns_400_for_non_opportunity_post(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        create_resp = client.post("/capture", json={"platform": "twitter", "content": "a book recommendation"})
+    post_id = create_resp.json()["id"]
+
+    with patch("main.calculate_match_score") as mock_calculate:
+        resp = client.post("/calculate-match", json={"post_id": post_id, "resume_text": "resume"})
+
+    assert resp.status_code == 400
+    mock_calculate.assert_not_called()
+
+    stored = client.get(f"/posts/{post_id}").json()
+    assert stored["match_score"] is None
 
 
 def test_capture_persists_and_returns_category(client):

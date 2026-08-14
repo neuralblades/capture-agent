@@ -97,6 +97,7 @@ def capture_post(post: CapturedPost) -> PostRecord:
         contact_email=extraction.contact_email or find_contact_email(post.content),
         action_type=extraction.action_type,
         category=extraction.category,
+        is_opportunity=extraction.is_opportunity,
     )
 
     record = database.get_post(post_id)
@@ -120,6 +121,8 @@ def calculate_match(request: CalculateMatchRequest) -> MatchResult:
     record = database.get_post(request.post_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Post not found")
+    if not record["is_opportunity"]:
+        raise HTTPException(status_code=400, detail="Post is not an opportunity; match scoring is not applicable")
 
     try:
         result = calculate_match_score(record["content"], request.resume_text)

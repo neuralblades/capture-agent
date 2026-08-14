@@ -33,7 +33,8 @@ Respond with ONLY a single JSON object (no surrounding text or markdown) of this
   "action_required": boolean,
   "external_url": string | null,
   "contact_email": string | null,
-  "action_type": "job_form" | "cold_email" | "general_link" | "none"
+  "action_type": "job_form" | "cold_email" | "general_link" | "none",
+  "is_opportunity": boolean
 }"""
 
 MATCH_JSON_INSTRUCTIONS = """

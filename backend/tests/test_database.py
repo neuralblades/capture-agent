@@ -175,6 +175,7 @@ def test_init_db_migrates_legacy_table_missing_new_columns(tmp_path, monkeypatch
     assert record["contact_email"] == "a@b.com"
     assert record["external_url"] is None
     assert record["match_score"] is None
+    assert record["is_opportunity"] is False
 
 
 def test_init_db_is_idempotent_on_already_migrated_table(isolated_db):
@@ -195,6 +196,16 @@ def test_category_defaults_to_general(isolated_db):
 def test_category_round_trips(isolated_db):
     post_id = _insert(category="AI Tools")
     assert database.get_post(post_id)["category"] == "AI Tools"
+
+
+def test_is_opportunity_defaults_to_false(isolated_db):
+    post_id = _insert()
+    assert database.get_post(post_id)["is_opportunity"] is False
+
+
+def test_is_opportunity_round_trips(isolated_db):
+    post_id = _insert(is_opportunity=True)
+    assert database.get_post(post_id)["is_opportunity"] is True
 
 
 def test_category_counts_includes_all_total_and_per_category_counts(isolated_db):
