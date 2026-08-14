@@ -249,3 +249,63 @@ def test_connection_is_closed_after_use(isolated_db):
 
     with pytest.raises(sqlite3.ProgrammingError):
         conn.execute("SELECT 1")
+
+
+def test_add_and_list_feeds(isolated_db):
+    feed_id = database.add_feed(url="https://blog.example.com/feed.xml", label="Example Blog")
+    assert feed_id == 1
+
+    feeds = database.list_feeds()
+    assert len(feeds) == 1
+    assert feeds[0]["url"] == "https://blog.example.com/feed.xml"
+    assert feeds[0]["label"] == "Example Blog"
+    assert feeds[0]["last_checked_at"] is None
+    assert feeds[0]["last_seen_guid"] is None
+
+
+def test_add_feed_label_is_optional(isolated_db):
+    feed_id = database.add_feed(url="https://blog.example.com/feed.xml", label=None)
+    assert database.get_feed(feed_id)["label"] is None
+
+
+def test_get_feed_returns_none_when_missing(isolated_db):
+    assert database.get_feed(999) is None
+
+
+def test_list_feeds_orders_oldest_first(isolated_db):
+    database.add_feed(url="https://a.example.com/feed.xml", label="A")
+    database.add_feed(url="https://b.example.com/feed.xml", label="B")
+
+    feeds = database.list_feeds()
+    assert [f["label"] for f in feeds] == ["A", "B"]
+
+
+def test_delete_feed_removes_row_and_returns_true(isolated_db):
+    feed_id = database.add_feed(url="https://blog.example.com/feed.xml", label="Example Blog")
+
+    assert database.delete_feed(feed_id) is True
+    assert database.get_feed(feed_id) is None
+
+
+def test_delete_feed_returns_false_when_missing(isolated_db):
+    assert database.delete_feed(999) is False
+
+
+def test_update_feed_poll_state_sets_last_checked_and_guid(isolated_db):
+    feed_id = database.add_feed(url="https://blog.example.com/feed.xml", label="Example Blog")
+
+    database.update_feed_poll_state(feed_id, last_seen_guid="entry-42")
+
+    feed = database.get_feed(feed_id)
+    assert feed["last_seen_guid"] == "entry-42"
+    assert feed["last_checked_at"] is not None
+
+
+def test_update_feed_poll_state_accepts_none_guid(isolated_db):
+    feed_id = database.add_feed(url="https://blog.example.com/feed.xml", label="Example Blog")
+
+    database.update_feed_poll_state(feed_id, last_seen_guid=None)
+
+    feed = database.get_feed(feed_id)
+    assert feed["last_seen_guid"] is None
+    assert feed["last_checked_at"] is not None

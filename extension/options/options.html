@@ -91,6 +91,30 @@
           <span id="status" class="status" role="status" aria-live="polite"></span>
         </div>
       </form>
+
+      <h1 class="section-heading">Feeds</h1>
+      <p class="hint">
+        Subscribe to an RSS/Atom feed (blog, newsletter, job board) to passively capture its new
+        entries in the background, without needing to visit the page. Polled by the backend every
+        20 minutes.
+      </p>
+
+      <form id="feed-form">
+        <label>
+          Feed URL
+          <input type="url" id="feedUrl" placeholder="https://example.com/feed.xml" required />
+        </label>
+        <label>
+          Label
+          <input type="text" id="feedLabel" placeholder="e.g. Example Blog" />
+        </label>
+        <div class="actions">
+          <button type="submit">Add feed</button>
+          <span id="feedStatus" class="status" role="status" aria-live="polite"></span>
+        </div>
+      </form>
+
+      <ul id="feedList" class="feed-list"></ul>
     </main>
     <script src="options.js"></script>
   </body>

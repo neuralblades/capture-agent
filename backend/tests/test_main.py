@@ -1,4 +1,5 @@
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from models import Deadline, ExtractionResult, FieldMapping, GeneratedEmail, MatchResult
@@ -529,3 +530,64 @@ def test_map_form_fields_returns_502_on_failure(client):
 
     assert resp.status_code == 502
     assert "boom" in resp.json()["detail"]
+
+
+VALID_FEED_PARSE = SimpleNamespace(bozo=0, version="rss20")
+INVALID_FEED_PARSE = SimpleNamespace(bozo=1, version="")
+
+
+def test_create_feed_validates_and_persists(client):
+    with patch("main.feedparser.parse", return_value=VALID_FEED_PARSE):
+        resp = client.post(
+            "/feeds", json={"url": "https://blog.example.com/feed.xml", "label": "Example Blog"}
+        )
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["url"] == "https://blog.example.com/feed.xml"
+    assert body["label"] == "Example Blog"
+    assert body["last_checked_at"] is None
+    assert body["last_seen_guid"] is None
+
+    list_resp = client.get("/feeds")
+    assert list_resp.status_code == 200
+    assert len(list_resp.json()) == 1
+
+
+def test_create_feed_rejects_url_that_does_not_parse_as_feed(client):
+    with patch("main.feedparser.parse", return_value=INVALID_FEED_PARSE):
+        resp = client.post("/feeds", json={"url": "https://example.com/not-a-feed", "label": None})
+
+    assert resp.status_code == 400
+    assert client.get("/feeds").json() == []
+
+
+def test_create_feed_accepts_feed_with_bozo_but_detected_version(client):
+    # A feed with minor XML issues (bozo=1) but a recognized version should
+    # still be accepted -- only unparseable-as-any-feed content is rejected.
+    lenient_parse = SimpleNamespace(bozo=1, version="atom10")
+    with patch("main.feedparser.parse", return_value=lenient_parse):
+        resp = client.post("/feeds", json={"url": "https://example.com/feed.xml", "label": None})
+
+    assert resp.status_code == 201
+
+
+def test_delete_feed_removes_it(client):
+    with patch("main.feedparser.parse", return_value=VALID_FEED_PARSE):
+        create_resp = client.post("/feeds", json={"url": "https://blog.example.com/feed.xml", "label": None})
+    feed_id = create_resp.json()["id"]
+
+    delete_resp = client.delete(f"/feeds/{feed_id}")
+    assert delete_resp.status_code == 204
+    assert client.get("/feeds").json() == []
+
+
+def test_delete_missing_feed_returns_404(client):
+    resp = client.delete("/feeds/999")
+    assert resp.status_code == 404
+
+
+def test_list_feeds_empty_when_none_added(client):
+    resp = client.get("/feeds")
+    assert resp.status_code == 200
+    assert resp.json() == []
