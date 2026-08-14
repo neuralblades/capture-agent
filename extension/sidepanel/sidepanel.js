@@ -113,9 +113,12 @@ const GOOGLE_FORM_PATTERN = /forms\.gle|docs\.google\.com\/forms/i;
 
 /**
  * Pulls candidate external URLs off a backend post: explicit fields the
- * backend may set (extracted_url, links, metadata.*) plus anything found by
+ * backend may set (external_url, links, metadata.*) plus anything found by
  * scanning the raw content text. The post's own sourceUrl is excluded since
- * that's already reachable via the "Open" action.
+ * that's already reachable via the "Open" action, and X's t.co link-shortener
+ * domain is excluded everywhere since it's Twitter's own redirect wrapper
+ * around the post's own content/media, not a distinct, informative link --
+ * showing it as a pill is just noise, not a genuine extra link.
  * @param {Record<string, unknown>} post
  * @returns {string[]}
  */
@@ -128,10 +131,19 @@ function isHttpUrl(value) {
   }
 }
 
+/** True for X's t.co link-shortener, which wraps the post's own content/media rather than pointing to a distinct external resource. */
+function isTwitterShortLink(url) {
+  try {
+    return new URL(url).hostname.toLowerCase() === "t.co";
+  } catch {
+    return false;
+  }
+}
+
 function extractExternalUrls(post) {
   const urls = new Set();
 
-  if (isHttpUrl(post.extracted_url)) urls.add(post.extracted_url);
+  if (isHttpUrl(post.external_url)) urls.add(post.external_url);
 
   if (Array.isArray(post.links)) {
     for (const link of post.links) {
@@ -152,7 +164,7 @@ function extractExternalUrls(post) {
   }
 
   urls.delete(post.url);
-  return Array.from(urls);
+  return Array.from(urls).filter((url) => !isTwitterShortLink(url));
 }
 
 /**
