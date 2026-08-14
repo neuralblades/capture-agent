@@ -115,10 +115,11 @@ const GOOGLE_FORM_PATTERN = /forms\.gle|docs\.google\.com\/forms/i;
  * Pulls candidate external URLs off a backend post: explicit fields the
  * backend may set (external_url, links, metadata.*) plus anything found by
  * scanning the raw content text. The post's own sourceUrl is excluded since
- * that's already reachable via the "Open" action, and X's t.co link-shortener
- * domain is excluded everywhere since it's Twitter's own redirect wrapper
- * around the post's own content/media, not a distinct, informative link --
- * showing it as a pill is just noise, not a genuine extra link.
+ * that's already reachable via the "Open" action, and each source platform's
+ * own link-shortener domain (t.co on X, lnkd.in on LinkedIn) is excluded
+ * everywhere since it's just that platform's redirect wrapper around the
+ * post's own content, not a distinct, informative link -- showing it as a
+ * pill is just noise, not a genuine extra link.
  * @param {Record<string, unknown>} post
  * @returns {string[]}
  */
@@ -131,10 +132,12 @@ function isHttpUrl(value) {
   }
 }
 
-/** True for X's t.co link-shortener, which wraps the post's own content/media rather than pointing to a distinct external resource. */
-function isTwitterShortLink(url) {
+/** Known platform-internal link-shortener domains: X's t.co, LinkedIn's lnkd.in. Neither points to a distinct external resource in its own right. */
+const LINK_SHORTENER_HOSTS = new Set(["t.co", "lnkd.in"]);
+
+function isPlatformShortLink(url) {
   try {
-    return new URL(url).hostname.toLowerCase() === "t.co";
+    return LINK_SHORTENER_HOSTS.has(new URL(url).hostname.toLowerCase());
   } catch {
     return false;
   }
@@ -164,7 +167,7 @@ function extractExternalUrls(post) {
   }
 
   urls.delete(post.url);
-  return Array.from(urls).filter((url) => !isTwitterShortLink(url));
+  return Array.from(urls).filter((url) => !isPlatformShortLink(url));
 }
 
 /**
