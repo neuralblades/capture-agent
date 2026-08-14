@@ -478,17 +478,19 @@ function renderList() {
     }
     actions.appendChild(actionGroup);
 
-    const applyToggle = document.createElement("label");
-    applyToggle.className = "apply-toggle";
-    const applyCheckbox = document.createElement("input");
-    applyCheckbox.type = "checkbox";
-    applyCheckbox.checked = !!item.applied;
-    applyCheckbox.addEventListener("change", () => toggleApplied(item, applyCheckbox));
-    const applyText = document.createElement("span");
-    applyText.textContent = "Mark as Applied";
-    applyToggle.appendChild(applyCheckbox);
-    applyToggle.appendChild(applyText);
-    actions.appendChild(applyToggle);
+    if (item.isOpportunity) {
+      const applyToggle = document.createElement("label");
+      applyToggle.className = "apply-toggle";
+      const applyCheckbox = document.createElement("input");
+      applyCheckbox.type = "checkbox";
+      applyCheckbox.checked = !!item.applied;
+      applyCheckbox.addEventListener("change", () => toggleApplied(item, applyCheckbox));
+      const applyText = document.createElement("span");
+      applyText.textContent = "Mark as Applied";
+      applyToggle.appendChild(applyCheckbox);
+      applyToggle.appendChild(applyText);
+      actions.appendChild(applyToggle);
+    }
 
     card.appendChild(actions);
 
