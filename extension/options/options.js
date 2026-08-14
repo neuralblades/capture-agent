@@ -93,3 +93,122 @@ form.addEventListener('submit', (event) => {
 });
 
 loadProfile();
+
+// --- Feeds -----------------------------------------------------------------
+// Feeds are backend-owned state (the poller runs server-side), not
+// chrome.storage.local -- unlike the profile form above, "Add"/"Remove" here
+// talk straight to the backend rather than a local key.
+const FEEDS_ENDPOINT = 'http://localhost:8000/feeds';
+
+const feedForm = document.getElementById('feed-form');
+const feedUrlInput = document.getElementById('feedUrl');
+const feedLabelInput = document.getElementById('feedLabel');
+const feedStatus = document.getElementById('feedStatus');
+const feedList = document.getElementById('feedList');
+
+let feedStatusTimer = null;
+function showFeedStatus(message, { isError = false } = {}) {
+  feedStatus.textContent = message;
+  feedStatus.classList.toggle('error', isError);
+  feedStatus.classList.add('visible');
+  clearTimeout(feedStatusTimer);
+  feedStatusTimer = setTimeout(() => feedStatus.classList.remove('visible'), 2500);
+}
+
+function renderFeeds(feeds) {
+  feedList.innerHTML = '';
+
+  if (feeds.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'feed-list-empty';
+    empty.textContent = 'No feeds subscribed yet.';
+    feedList.appendChild(empty);
+    return;
+  }
+
+  for (const feed of feeds) {
+    const item = document.createElement('li');
+    item.className = 'feed-item';
+
+    const info = document.createElement('div');
+    info.className = 'feed-item-info';
+
+    const label = document.createElement('span');
+    label.className = 'feed-item-label';
+    label.textContent = feed.label || feed.url;
+    info.appendChild(label);
+
+    const url = document.createElement('span');
+    url.className = 'feed-item-url';
+    url.textContent = feed.url;
+    info.appendChild(url);
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'feed-item-remove';
+    removeButton.textContent = 'Remove';
+    removeButton.addEventListener('click', () => removeFeed(feed.id));
+
+    item.append(info, removeButton);
+    feedList.appendChild(item);
+  }
+}
+
+async function loadFeeds() {
+  try {
+    const response = await fetch(FEEDS_ENDPOINT);
+    if (!response.ok) throw new Error(`Failed to load feeds (status ${response.status})`);
+    renderFeeds(await response.json());
+  } catch (error) {
+    console.error('[CaptureAgent] Failed to load feeds', error);
+    feedList.innerHTML = '';
+    const errorItem = document.createElement('li');
+    errorItem.className = 'feed-list-empty';
+    errorItem.textContent = 'Could not reach the backend to load feeds.';
+    feedList.appendChild(errorItem);
+  }
+}
+
+async function removeFeed(feedId) {
+  try {
+    const response = await fetch(`${FEEDS_ENDPOINT}/${feedId}`, { method: 'DELETE' });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Failed to remove feed (status ${response.status})`);
+    }
+    await loadFeeds();
+  } catch (error) {
+    console.error('[CaptureAgent] Failed to remove feed', error);
+    showFeedStatus('Failed to remove feed', { isError: true });
+  }
+}
+
+feedForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  const url = feedUrlInput.value.trim();
+  const label = feedLabelInput.value.trim();
+  if (!url) return;
+
+  try {
+    const response = await fetch(FEEDS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, label: label || null }),
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail || `Failed to add feed (status ${response.status})`);
+    }
+
+    feedUrlInput.value = '';
+    feedLabelInput.value = '';
+    showFeedStatus('Feed added');
+    await loadFeeds();
+  } catch (error) {
+    console.error('[CaptureAgent] Failed to add feed', error);
+    showFeedStatus(error.message || 'Failed to add feed', { isError: true });
+  }
+});
+
+loadFeeds();

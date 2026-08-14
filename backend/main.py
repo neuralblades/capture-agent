@@ -6,14 +6,18 @@ ISO dates), and persists the result to SQLite.
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+import feedparser
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 import database
+import feed_poller
 from contact_extractor import find_contact_email
 from email_generator import generate_cold_email
 from llm_processor import calculate_match_score, extract_post_data, generate_form_answer, map_form_fields
@@ -21,6 +25,8 @@ from models import (
     CalculateMatchRequest,
     CapturedPost,
     CategoryCount,
+    FeedCreate,
+    FeedRecord,
     FormAnswerRequest,
     FormAnswerResponse,
     GenerateEmailRequest,
@@ -35,7 +41,13 @@ from models import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.init_db()
-    yield
+    poller_task = asyncio.create_task(feed_poller.run_feed_poller(capture_post))
+    try:
+        yield
+    finally:
+        poller_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await poller_task
 
 
 app = FastAPI(title="Capture Agent Backend", version="0.1.0", lifespan=lifespan)
@@ -187,3 +199,30 @@ def generate_email(request: GenerateEmailRequest) -> GeneratedEmail:
         )
     except Exception as exc:  # noqa: BLE001 - surface LLM/API failures as a 502, not a 500
         raise HTTPException(status_code=502, detail=f"Email generation failed: {exc}") from exc
+
+
+@app.get("/feeds", response_model=list[FeedRecord])
+def get_feeds() -> list[FeedRecord]:
+    return [FeedRecord(**row) for row in database.list_feeds()]
+
+
+@app.post("/feeds", response_model=FeedRecord, status_code=201)
+def create_feed(feed: FeedCreate) -> FeedRecord:
+    # feedparser never raises on a bad URL/unreachable host/non-feed content --
+    # it sets bozo and leaves version empty instead, so that's what "does this
+    # actually parse as a feed" comes down to checking.
+    parsed = feedparser.parse(feed.url)
+    if parsed.bozo and not parsed.version:
+        raise HTTPException(status_code=400, detail="URL does not look like a valid RSS/Atom feed")
+
+    feed_id = database.add_feed(url=feed.url, label=feed.label)
+    record = database.get_feed(feed_id)
+    if record is None:
+        raise HTTPException(status_code=500, detail="Feed was saved but could not be re-read")
+    return FeedRecord(**record)
+
+
+@app.delete("/feeds/{feed_id}", status_code=204)
+def delete_feed(feed_id: int) -> None:
+    if not database.delete_feed(feed_id):
+        raise HTTPException(status_code=404, detail="Feed not found")

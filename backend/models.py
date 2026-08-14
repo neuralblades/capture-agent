@@ -222,3 +222,27 @@ class GeneratedEmail(BaseModel):
 
     subject: str = Field(..., description="Drafted email subject line")
     body: str = Field(..., description="Drafted email body")
+
+
+class FeedCreate(BaseModel):
+    """Request to subscribe to an RSS/Atom feed for passive background polling."""
+
+    url: str = Field(..., description="Feed URL to poll")
+    label: Optional[str] = Field(
+        None, description="Display label used as the captured post's author, e.g. the blog/newsletter name"
+    )
+
+
+class FeedRecord(BaseModel):
+    """A subscribed feed and its polling state."""
+
+    id: int
+    url: str
+    label: Optional[str] = None
+    last_checked_at: Optional[str] = Field(
+        None, description="When this feed was last polled, ISO 8601; null if never polled"
+    )
+    last_seen_guid: Optional[str] = Field(
+        None, description="Guid/link of the newest entry captured so far, used to dedupe re-polls"
+    )
+    created_at: str

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
@@ -27,6 +28,15 @@ CREATE TABLE IF NOT EXISTS posts (
     category TEXT NOT NULL DEFAULT 'General',
     is_opportunity INTEGER NOT NULL DEFAULT 0,
     posted_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS feeds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL,
+    label TEXT,
+    last_checked_at TEXT,
+    last_seen_guid TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -67,7 +77,7 @@ _COLUMN_MIGRATIONS: list[tuple[str, str]] = [
 
 def init_db() -> None:
     with get_connection() as conn:
-        conn.execute(SCHEMA)
+        conn.executescript(SCHEMA)
         existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(posts)")}
         for column, ddl in _COLUMN_MIGRATIONS:
             if column not in existing_columns:
@@ -213,3 +223,48 @@ def update_match_score(post_id: int, match_score: int) -> bool:
             "UPDATE posts SET match_score = ? WHERE id = ?", (match_score, post_id)
         )
     return cursor.rowcount > 0
+
+
+def feed_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "url": row["url"],
+        "label": row["label"],
+        "last_checked_at": row["last_checked_at"],
+        "last_seen_guid": row["last_seen_guid"],
+        "created_at": row["created_at"],
+    }
+
+
+def add_feed(*, url: str, label: Optional[str]) -> int:
+    with get_connection() as conn:
+        cursor = conn.execute("INSERT INTO feeds (url, label) VALUES (?, ?)", (url, label))
+        return cursor.lastrowid
+
+
+def list_feeds() -> list[dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM feeds ORDER BY id ASC").fetchall()
+    return [feed_row_to_dict(row) for row in rows]
+
+
+def get_feed(feed_id: int) -> Optional[dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM feeds WHERE id = ?", (feed_id,)).fetchone()
+    return feed_row_to_dict(row) if row else None
+
+
+def delete_feed(feed_id: int) -> bool:
+    """Returns True if a row was deleted, False if feed_id didn't exist."""
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM feeds WHERE id = ?", (feed_id,))
+    return cursor.rowcount > 0
+
+
+def update_feed_poll_state(feed_id: int, *, last_seen_guid: Optional[str]) -> None:
+    """Records that a feed was just polled and the newest entry guid seen."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE feeds SET last_checked_at = ?, last_seen_guid = ? WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat(), last_seen_guid, feed_id),
+        )

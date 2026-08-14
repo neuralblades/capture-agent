@@ -220,6 +220,7 @@ const PLATFORM_LABELS = {
   twitter: "X",
   linkedin: "LinkedIn",
   web_selection: "Web",
+  rss: "RSS",
 };
 
 function platformLabel(platform) {
