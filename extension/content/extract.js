@@ -78,16 +78,19 @@
     const textNode = queryOwnFirst(article, SELECTORS.tweetText);
     if (!textNode) return '';
 
-    // X truncates the *visible* text of a long link inside a tweet with a
-    // trailing ellipsis (e.g. "docs.google.com/forms/d/e/…"), even though the
-    // anchor's href still holds the complete, real URL. Reading textContent
-    // directly would capture that truncated, unusable display text, so swap
-    // in the real href for any external link before flattening to text.
-    // Mentions/hashtags use relative hrefs ("/handle", "/hashtag/x") and are
-    // left as their visible text.
+    // X routes every external link through its own t.co redirect: the
+    // anchor's href attribute is always the opaque t.co URL, never the real
+    // destination -- it's the *visible* text that holds the real URL,
+    // truncated with a trailing ellipsis for long ones (e.g.
+    // "docs.google.com/forms/d/e/…"). A complete visible URL is strictly
+    // more useful than the opaque t.co redirect, so only fall back to the
+    // anchor's href (t.co -- still a working link, just not a readable one)
+    // when the visible text was actually truncated. Mentions/hashtags use
+    // relative hrefs ("/handle", "/hashtag/x") and are left as their visible
+    // text either way.
     const clone = textNode.cloneNode(true);
     clone.querySelectorAll('a[href]').forEach((anchor) => {
-      if (/^https?:\/\//i.test(anchor.getAttribute('href') || '')) {
+      if (/^https?:\/\//i.test(anchor.getAttribute('href') || '') && anchor.textContent.includes('…')) {
         anchor.textContent = anchor.href;
       }
     });
