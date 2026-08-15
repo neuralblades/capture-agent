@@ -85,6 +85,34 @@
   }
 
   /**
+   * The About sidebar's optional "Website" field (often a live demo / project
+   * homepage link, e.g. react.dev for facebook/react) is the only link in
+   * that sidebar that both points off github.com and carries the `.text-bold`
+   * utility class (a plain, non-hashed GitHub class) -- topic tags and the
+   * Readme/License/Activity resource links share the same sidebar container
+   * but match neither signal. Verified live against github.com/react/react;
+   * returns '' for repos that don't set a website (most repos, e.g. the
+   * Linux kernel).
+   * @returns {string}
+   */
+  function getRepoWebsite() {
+    const aboutHeading = Array.from(document.querySelectorAll('h2')).find(
+      (h2) => cleanText(h2) === 'About'
+    );
+    const container = aboutHeading?.parentElement;
+    if (!container) return '';
+
+    const link = Array.from(container.querySelectorAll('a.text-bold[href]')).find((a) => {
+      try {
+        return new URL(a.href).hostname !== 'github.com';
+      } catch {
+        return false;
+      }
+    });
+    return link ? link.href : '';
+  }
+
+  /**
    * GitHub renders a repo's README two different ways depending on the
    * file's name: recognized markdown extensions (README.md) render as
    * sanitized HTML inside `<article class="markdown-body">` (a plain,
@@ -231,8 +259,15 @@
     if (!ownerRepo) return;
 
     const description = getRepoDescription();
+    const website = getRepoWebsite();
     const readme = getReadmeText();
-    const text = [description, readme].filter(Boolean).join('\n\n---\n\n');
+    // The website line sits with the description (not its own '---' section)
+    // so it reads as part of the "about" summary rather than a third,
+    // separate block. Plain-text "Website: <url>" so the sidepanel's
+    // existing regex link-scan (extractExternalUrls in sidepanel.js) picks
+    // it up as a link pill for free -- no sidepanel changes needed for that.
+    const about = [description, website ? `Website: ${website}` : ''].filter(Boolean).join('\n');
+    const text = [about, readme].filter(Boolean).join('\n\n---\n\n');
     if (!text) return;
 
     const url = `${location.origin}/${ownerRepo.owner}/${ownerRepo.repo}`;
