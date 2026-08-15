@@ -5,11 +5,15 @@ const BACKEND_POSTS_URL = "http://localhost:8000/posts";
 const BACKEND_CATEGORIES_URL = "http://localhost:8000/categories";
 const BACKEND_GENERATE_EMAIL_URL = "http://localhost:8000/generate-email";
 const BACKEND_CALCULATE_MATCH_URL = "http://localhost:8000/calculate-match";
+const BACKEND_STATS_OVERVIEW_URL = "http://localhost:8000/stats/overview";
 // Written by extension/options/options.js and read by extension/content/form_autofill.js.
 const PROFILE_STORAGE_KEY = "profile";
 
 const ALL_CATEGORY = "All";
 const ALL_PLATFORM = "All";
+
+const VIEW_LIST = "list";
+const VIEW_OVERVIEW = "overview";
 
 /** Sample data used only when no extension runtime is present (e.g. previewing the HTML directly). */
 const SAMPLE_ITEMS = [
@@ -66,6 +70,7 @@ const hasExtensionRuntime =
   typeof chrome !== "undefined" && !!chrome.runtime && !!chrome.runtime.id;
 
 const state = {
+  view: VIEW_LIST,
   activeTab: ALL_CATEGORY,
   activePlatform: ALL_PLATFORM,
   query: "",
@@ -74,6 +79,7 @@ const state = {
   categories: [{ name: ALL_CATEGORY, count: 0 }],
   metrics: {},
   appliedIds: new Set(),
+  stats: null,
 };
 
 const els = {
@@ -86,6 +92,16 @@ const els = {
   sortMatchBtn: document.getElementById("sort-match-btn"),
   statCaptures: document.getElementById("stat-captures"),
   statRate: document.getElementById("stat-rate"),
+  viewTabList: document.getElementById("view-tab-list"),
+  viewTabOverview: document.getElementById("view-tab-overview"),
+  overviewView: document.getElementById("overview-view"),
+  overviewEmpty: document.getElementById("overview-empty"),
+  overviewContent: document.getElementById("overview-content"),
+  overviewTotal: document.getElementById("overview-total"),
+  overviewPlatformBars: document.getElementById("overview-platform-bars"),
+  overviewCategoryBars: document.getElementById("overview-category-bars"),
+  overviewTrend: document.getElementById("overview-trend"),
+  overviewTrendRange: document.getElementById("overview-trend-range"),
 };
 
 /** @returns {Promise<Record<string, unknown>>} Profile written by extension/options. */
@@ -348,6 +364,120 @@ async function loadCategories() {
   }
 }
 
+/** Fetches the read-only stats aggregation (platform/category/trend) for the
+ * Overview tab. This is a separate data source from state.items/categories --
+ * it always reflects everything currently in the backend's posts table,
+ * independent of the card list's search/tab filters. */
+async function loadStats() {
+  try {
+    const response = await fetch(BACKEND_STATS_OVERVIEW_URL);
+    if (!response.ok) {
+      throw new Error(`Failed to load stats (${response.status})`);
+    }
+    state.stats = await response.json();
+  } catch (error) {
+    console.error("[CaptureAgent] Failed to load stats overview", error);
+    state.stats = null;
+    showToast("Couldn't load overview", true);
+  }
+  renderOverview();
+}
+
+/** Renders one row per {name, count} entry (skipping the "All" total row,
+ * which is surfaced separately as overview-total) as a bar scaled relative
+ * to the largest count in the list.
+ * @param {HTMLElement} container
+ * @param {{name: string, count: number}[]} rows
+ * @param {(name: string) => string} [labelFn]
+ */
+function renderBarList(container, rows, labelFn = (name) => name) {
+  container.innerHTML = "";
+  const entries = rows.filter((row) => row.name !== "All");
+  const max = Math.max(1, ...entries.map((row) => row.count));
+
+  for (const { name, count } of entries) {
+    const row = document.createElement("div");
+    row.className = "bar-row";
+
+    const label = document.createElement("span");
+    label.className = "bar-label";
+    label.textContent = labelFn(name);
+    label.title = labelFn(name);
+
+    const track = document.createElement("div");
+    track.className = "bar-track";
+    const fill = document.createElement("div");
+    fill.className = "bar-fill";
+    fill.style.width = `${(count / max) * 100}%`;
+    track.appendChild(fill);
+
+    const countEl = document.createElement("span");
+    countEl.className = "bar-count";
+    countEl.textContent = String(count);
+
+    row.appendChild(label);
+    row.appendChild(track);
+    row.appendChild(countEl);
+    container.appendChild(row);
+  }
+}
+
+/** Renders the day/week-bucketed trend as a row of height-scaled bars, one
+ * per bucket returned by the backend (already zero-filled/gap-free). */
+function renderTrendChart(container, trend) {
+  container.innerHTML = "";
+  const max = Math.max(1, ...trend.map((b) => b.count));
+
+  for (const { bucket, count } of trend) {
+    const bar = document.createElement("div");
+    bar.className = "trend-bar" + (count > 0 ? " has-captures" : "");
+    bar.style.height = `${Math.max(2, (count / max) * 100)}%`;
+    bar.title = `${bucket}: ${count} capture${count === 1 ? "" : "s"}`;
+    container.appendChild(bar);
+  }
+}
+
+function renderOverview() {
+  const stats = state.stats;
+  const hasStats = !!stats;
+  const total = hasStats ? stats.platform_counts.find((p) => p.name === "All")?.count || 0 : 0;
+
+  els.overviewEmpty.hidden = !hasStats || total > 0;
+  els.overviewContent.hidden = !hasStats || total === 0;
+  if (!hasStats || total === 0) return;
+
+  els.overviewTotal.textContent = `${total} capture${total === 1 ? "" : "s"} total`;
+  renderBarList(els.overviewPlatformBars, stats.platform_counts, platformLabel);
+  renderBarList(els.overviewCategoryBars, stats.category_counts);
+  renderTrendChart(els.overviewTrend, stats.trend);
+
+  if (stats.trend.length > 0) {
+    els.overviewTrendRange.textContent = `${stats.trend[0].bucket} – ${stats.trend[stats.trend.length - 1].bucket}`;
+  }
+}
+
+/** Switches between the card-list view and the read-only Overview tab.
+ * Overview stats are fetched lazily (on first switch, and on every
+ * subsequent switch back) rather than kept live in the background. */
+function switchView(view) {
+  state.view = view;
+  const showList = view === VIEW_LIST;
+
+  els.viewTabList.setAttribute("aria-selected", String(showList));
+  els.viewTabOverview.setAttribute("aria-selected", String(!showList));
+
+  els.platformTabs.hidden = !showList;
+  els.tabs.hidden = !showList;
+  els.list.hidden = !showList;
+  els.overviewView.hidden = showList;
+  if (showList) {
+    els.emptyState.hidden = filteredItems().length > 0;
+  } else {
+    els.emptyState.hidden = true;
+    loadStats();
+  }
+}
+
 function filteredItems() {
   const q = state.query.trim().toLowerCase();
   const items = state.items.filter((item) => {
@@ -535,7 +665,9 @@ function buildFreshnessPill(item) {
 function renderList() {
   const items = filteredItems();
   els.list.innerHTML = "";
-  els.emptyState.hidden = items.length > 0;
+  // Guarded by state.view so a background refresh while the Overview tab is
+  // active can't pop the list's empty-state back up alongside it.
+  els.emptyState.hidden = state.view !== VIEW_LIST || items.length > 0;
 
   for (const item of items) {
     const card = document.createElement("article");
@@ -767,6 +899,9 @@ function render() {
   renderList();
 }
 
+els.viewTabList.addEventListener("click", () => switchView(VIEW_LIST));
+els.viewTabOverview.addEventListener("click", () => switchView(VIEW_OVERVIEW));
+
 els.sortMatchBtn.addEventListener("click", () => {
   state.sortByMatch = !state.sortByMatch;
   els.sortMatchBtn.setAttribute("aria-pressed", String(state.sortByMatch));
@@ -788,6 +923,7 @@ if (hasExtensionRuntime && chrome.runtime.onMessage) {
     if (message?.type === MessageType.REFRESH_POSTS) {
       refreshMetrics().then(loadPosts);
       loadCategories();
+      if (state.view === VIEW_OVERVIEW) loadStats();
     }
     if (message?.type === MessageType.ITEMS_UPDATED && Array.isArray(message.items)) {
       applyAppliedState(message.items);

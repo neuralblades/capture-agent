@@ -4,9 +4,9 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator, Literal, Optional
 
 DB_PATH = Path(__file__).parent / "capture_agent.db"
 
@@ -192,6 +192,81 @@ def category_counts() -> list[dict[str, Any]]:
             "SELECT category AS name, COUNT(*) AS count FROM posts GROUP BY category ORDER BY count DESC, name ASC"
         ).fetchall()
     return [{"name": "All", "count": total}] + [{"name": row["name"], "count": row["count"]} for row in rows]
+
+
+def platform_counts() -> list[dict[str, Any]]:
+    """Unique platforms currently present, with post counts, plus an 'All' total.
+
+    Same shape/ordering as category_counts() -- 'All' first, then platforms
+    ordered by count (most posts first, ties broken alphabetically).
+    """
+    with get_connection() as conn:
+        total = conn.execute("SELECT COUNT(*) AS n FROM posts").fetchone()["n"]
+        rows = conn.execute(
+            "SELECT platform AS name, COUNT(*) AS count FROM posts GROUP BY platform ORDER BY count DESC, name ASC"
+        ).fetchall()
+    return [{"name": "All", "count": total}] + [{"name": row["name"], "count": row["count"]} for row in rows]
+
+
+def _parse_captured_at(value: str) -> Optional[datetime]:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    # A handful of legacy/manually-inserted rows may lack an offset; treat
+    # them as already-UTC rather than assuming the server's local timezone.
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _bucket_keys(window_start: date, window_end: date, bucket: Literal["day", "week"]) -> list[date]:
+    """Every bucket key in [window_start, window_end], inclusive, so the trend
+    response is zero-filled and gap-free rather than only listing days/weeks
+    that happen to have captures."""
+    if bucket == "day":
+        return [window_start + timedelta(days=i) for i in range((window_end - window_start).days + 1)]
+
+    # Week buckets are keyed by their Monday, so a window whose start/end
+    # fall mid-week still produces every week those days belong to.
+    first_week = window_start - timedelta(days=window_start.weekday())
+    last_week = window_end - timedelta(days=window_end.weekday())
+    weeks = []
+    cursor = first_week
+    while cursor <= last_week:
+        weeks.append(cursor)
+        cursor += timedelta(days=7)
+    return weeks
+
+
+def trend_counts(days: int = 30, bucket: Literal["day", "week"] = "day") -> list[dict[str, Any]]:
+    """Capture counts bucketed by day or week (keyed by captured_at, in UTC)
+    over a trailing window of `days` ending today (inclusive on both ends).
+
+    Grouping happens in Python rather than SQL: captured_at is stored as
+    whatever ISO 8601 offset the client/server produced it with, and string
+    comparison/GROUP BY against that column would silently mis-bucket values
+    near a UTC day boundary that weren't captured in UTC.
+    """
+    now = datetime.now(timezone.utc)
+    window_end = now.date()
+    window_start = window_end - timedelta(days=days - 1)
+
+    with get_connection() as conn:
+        rows = conn.execute("SELECT captured_at FROM posts").fetchall()
+
+    counts: dict[date, int] = {}
+    for row in rows:
+        parsed = _parse_captured_at(row["captured_at"])
+        if parsed is None:
+            continue
+        day = parsed.astimezone(timezone.utc).date()
+        if day < window_start or day > window_end:
+            continue
+        key = day if bucket == "day" else day - timedelta(days=day.weekday())
+        counts[key] = counts.get(key, 0) + 1
+
+    return [{"bucket": key.isoformat(), "count": counts.get(key, 0)} for key in _bucket_keys(window_start, window_end, bucket)]
 
 
 def get_post_by_url_and_content(url: str, content: str) -> Optional[dict[str, Any]]:
