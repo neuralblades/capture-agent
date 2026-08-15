@@ -249,10 +249,24 @@ function platformLabel(platform) {
  * this UI renders. The backend doesn't classify posts as book/study_plan, so
  * anything without a resolved deadline falls back to the generic "post" type
  * and only shows under the "All" tab.
+ *
+ * The backend's LLM classifier (deadlines/is_opportunity/action_type) has no
+ * platform awareness -- it runs the same way over every captured post. For
+ * GitHub repo captures that's a mismatch: a README's prose can easily
+ * contain a deadline-shaped date (changelog entries, "Support ends...",
+ * etc.) with nothing for the user to actually apply to, which would
+ * otherwise surface a misleading "Fill Form" / "Apply" action for what's
+ * just reference material. Rather than teach every LLM provider prompt
+ * about every platform's semantics, github posts are forced to the plain
+ * "post" type here and never treated as an opportunity -- the repo's
+ * "Website" link (captured into the post's own content by github.js) still
+ * surfaces normally as an "Open Link" pill via the existing link-extraction
+ * path below.
  * @param {Record<string, unknown>} post
  */
 function mapPostToItem(post) {
-  const deadline = Array.isArray(post.deadlines) && post.deadlines.length > 0 ? post.deadlines[0] : null;
+  const isGithub = post.platform === "github";
+  const deadline = !isGithub && Array.isArray(post.deadlines) && post.deadlines.length > 0 ? post.deadlines[0] : null;
   const { applyUrl, links } = buildLinkInfo(extractExternalUrls(post));
   return {
     id: `post-${post.id}`,
@@ -274,7 +288,7 @@ function mapPostToItem(post) {
     matchingSkills: [],
     missingSkills: [],
     category: post.category || "General",
-    isOpportunity: post.is_opportunity === true,
+    isOpportunity: !isGithub && post.is_opportunity === true,
     postedAt: typeof post.posted_at === "string" ? post.posted_at : null,
     applied: false,
   };

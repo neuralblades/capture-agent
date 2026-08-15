@@ -1,61 +1,55 @@
-/* Styling for the .capture-agent-btn injected into GitHub's repo header
-   action row (.pagehead-actions). Self-contained (github.js doesn't share
-   content.css, which is x.com-specific), sized to sit naturally alongside
-   GitHub's own Watch/Fork/Star buttons. */
+/* Styling for the floating .capture-agent-github-fab shown on GitHub repo
+   root and organization pages. Self-contained (github.js doesn't share
+   content.css, which is x.com-specific). Fixed-position rather than
+   docked into GitHub's own layout -- see github.js's header comment for why. */
 
-.capture-agent-btn-github-item {
-  display: inline-block;
-  margin-left: 8px;
-  vertical-align: middle;
-}
-
-.capture-agent-btn-github {
+.capture-agent-github-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483647;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 12px;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
   border: 1px solid rgba(27, 31, 36, 0.15);
-  border-radius: 6px;
-  background: #f6f8fa;
-  color: #24292f;
-  font-family: inherit;
-  font-size: 12px;
+  border-radius: 20px;
+  background: #24292f;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  box-shadow: 0 4px 12px rgba(27, 31, 36, 0.25);
+  transition: background-color 0.15s ease, transform 0.15s ease;
 }
 
-.capture-agent-btn-github-icon {
+.capture-agent-github-fab-icon {
   flex-shrink: 0;
   display: block;
 }
 
-.capture-agent-btn-github:hover:not(:disabled) {
-  background-color: #f3f4f6;
-  border-color: rgba(27, 31, 36, 0.3);
+.capture-agent-github-fab:hover:not(:disabled) {
+  background-color: #32383f;
+  transform: translateY(-1px);
 }
 
-.capture-agent-btn-github[data-capture-agent-state="loading"] {
-  color: #0969da;
+.capture-agent-github-fab[data-capture-agent-state="loading"] {
+  background-color: #0969da;
   cursor: default;
 }
 
-.capture-agent-btn-github[data-capture-agent-state="success"] {
-  color: #ffffff;
+.capture-agent-github-fab[data-capture-agent-state="success"] {
   background-color: #1a7f37;
-  border-color: #1a7f37;
 }
 
-.capture-agent-btn-github[data-capture-agent-state="error"] {
-  color: #ffffff;
+.capture-agent-github-fab[data-capture-agent-state="error"] {
   background-color: #cf222e;
-  border-color: #cf222e;
 }
 
-.capture-agent-btn-github:disabled {
+.capture-agent-github-fab:disabled {
   cursor: default;
 }
