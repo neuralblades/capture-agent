@@ -52,7 +52,7 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://github.com/*/*"],
+      "matches": ["https://github.com/*"],
       "js": ["extension/content/github.js"],
       "css": ["extension/content/github.css"],
       "run_at": "document_idle"

@@ -1,34 +1,45 @@
-// Content script: injects a .capture-agent-btn into a GitHub repo's
-// Star/Watch/Fork action row on the repo ROOT page only, and sends the
-// repo's description + README text to the background service worker as a
-// CAPTURE_POST message (platform: 'github').
+// Content script: shows a floating capture button on GitHub repo root pages
+// and organization pages, and sends the extracted content to the background
+// service worker as a CAPTURE_POST message (platform: 'github').
 //
 // Standalone like linkedin.js -- this is the only script injected on
 // github.com, so it can't rely on the CaptureAgent globals the x.com
 // content scripts set up.
 //
-// The manifest's match pattern (https://github.com/*/*) can't distinguish a
-// repo root ("/owner/repo") from repo subpages ("/owner/repo/issues",
-// "/owner/repo/pulls", etc.) or other two-segment paths -- Chrome match
-// patterns have no path-segment-count operator. So every scan re-checks the
-// DOM for a repo-root-only landmark before doing anything else (see
-// isRepoRootPage below), rather than trusting the URL shape.
+// A floating button (fixed-position, appended once to <body>) was chosen
+// over injecting into GitHub's own header row deliberately: an earlier
+// version anchored on the Star/Watch/Fork action bar, which turned out to
+// look different enough between logged-out and logged-in sessions that the
+// injection point couldn't be found reliably in both. A floating button
+// doesn't need an anchor in GitHub's own layout at all, so it's unaffected
+// by that (or by any future header redesign) -- all it needs is a reliable
+// way to tell "is this page capturable", which is a DOM check regardless.
 //
-// GitHub's repo page also ships hashed/atomic CSS module classes for most of
-// its layout (e.g. "OverviewRepoFiles-module__Box_2__zsLGk") that regenerate
-// on deploy, same problem linkedin.js documents for LinkedIn's markup. Where
+// The manifest matches all of https://github.com/*, since repo pages
+// ("/owner/repo"), org pages ("/owner"), and plenty of non-capturable pages
+// (settings, marketing pages, a user's own profile) all share overlapping
+// URL shapes that Chrome match patterns can't distinguish. So every scan
+// re-checks the DOM for a page-type-specific landmark before showing
+// anything (see detectPageType below), rather than trusting the URL shape.
+//
+// GitHub's repo page ships hashed/atomic CSS module classes for most of its
+// layout (e.g. "OverviewRepoFiles-module__Box_2__zsLGk") that regenerate on
+// deploy, same problem linkedin.js documents for LinkedIn's markup. Where
 // possible this file anchors on things that have stayed stable for years
 // instead: real semantic elements (the file-listing <table>, the rendered
 // <article class="markdown-body">), a11y-only landmarks (a visually-hidden
 // h2 whose text names the region, same trick linkedin.js uses for "Feed
-// post"), and long-standing non-hashed Primer classes (.pagehead-actions,
-// .btn). Verified live against github.com/torvalds/linux and
-// github.com/react/react (2026-08-15) -- re-derive by inspecting a live repo
-// page if these stop matching, rather than guessing at new class names.
+// post"), schema.org microdata (organizations carry itemtype="...Organization"),
+// and long-standing non-hashed/"js-" prefixed classes (.text-bold, .orghead,
+// .js-pinned-items-reorder-list). Verified live against
+// github.com/torvalds/linux, github.com/react/react, github.com/facebook
+// (an org page) and github.com/torvalds (a user profile, to confirm it's
+// correctly excluded) on 2026-08-15 -- re-derive by inspecting a live page
+// if these stop matching, rather than guessing at new class names.
 (function () {
   'use strict';
 
-  const INJECTED_ATTR = 'data-capture-agent-injected';
+  const FAB_ID = 'capture-agent-github-fab';
   const RESET_DELAY_MS = 2500;
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -41,14 +52,16 @@
     return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
   }
 
+  // ---- Repo root page ----
+
   /**
    * GitHub marks the file-browser + readme region with a visually-hidden h2
    * for screen readers ("Repository files navigation") that only renders on
    * the repo root -- confirmed absent on /issues, /pulls, and other repo
-   * subpages, even though those subpages share the same header chrome
-   * (including the Star/Watch/Fork row) as the root page. This is the
-   * primary repo-root signal; everything else on the page persists across
-   * subpages and can't be used to tell root apart from, say, /pulls.
+   * subpages, even though those subpages share the same header chrome as
+   * the root page. This is the repo-root signal; everything else on the
+   * page persists across subpages and can't be used to tell root apart
+   * from, say, /pulls.
    * @returns {boolean}
    */
   function isRepoRootPage() {
@@ -136,6 +149,136 @@
   }
 
   /**
+   * @returns {{author: string, text: string, url: string}|null}
+   */
+  function buildRepoCapture() {
+    const ownerRepo = getOwnerRepo();
+    if (!ownerRepo) return null;
+
+    const description = getRepoDescription();
+    const website = getRepoWebsite();
+    const readme = getReadmeText();
+    // The website line sits with the description (not its own '---' section)
+    // so it reads as part of the "about" summary rather than a third,
+    // separate block. Plain-text "Website: <url>" so the sidepanel's
+    // existing regex link-scan (extractExternalUrls in sidepanel.js) picks
+    // it up as a link pill for free -- no sidepanel changes needed for that.
+    const about = [description, website ? `Website: ${website}` : ''].filter(Boolean).join('\n');
+    const text = [about, readme].filter(Boolean).join('\n\n---\n\n');
+    if (!text) return null;
+
+    return {
+      author: ownerRepo.owner,
+      text,
+      url: `${location.origin}/${ownerRepo.owner}/${ownerRepo.repo}`,
+    };
+  }
+
+  // ---- Organization page ----
+
+  /**
+   * Organization pages carry schema.org Organization microdata on a wrapper
+   * div (itemtype ending in ".../Organization") -- verified live on
+   * github.com/facebook. User profiles use "...Person" instead (verified on
+   * github.com/torvalds), so this cleanly excludes them; the floating button
+   * is repo/org only, per scope.
+   * @returns {Element|null}
+   */
+  function findOrgContainer() {
+    return document.querySelector('[itemtype*="Organization"]');
+  }
+
+  function isOrgPage() {
+    return !!findOrgContainer();
+  }
+
+  /**
+   * `.orghead` is GitHub's own (non-hashed) class for the profile header
+   * block -- scoping to it keeps the bio lookup below from matching
+   * `.color-fg-muted` text elsewhere on the page (that utility class is used
+   * all over repo-card metadata further down the same page).
+   * @returns {Element|null}
+   */
+  function findOrgHeader() {
+    return document.querySelector('.orghead');
+  }
+
+  /**
+   * @returns {{name: string, bio: string, website: string}}
+   */
+  function getOrgProfile() {
+    const header = findOrgHeader();
+    if (!header) return { name: '', bio: '', website: '' };
+
+    const name = cleanText(header.querySelector('h1'));
+    const bio = cleanText(header.querySelector('div.color-fg-muted'));
+    const websiteLink = header.querySelector('[itemprop="url"]');
+    return { name, bio, website: websiteLink ? websiteLink.href : '' };
+  }
+
+  /**
+   * Pinned repos sit in an `<ol class="...js-pinned-items-reorder-list">`
+   * under the "Pinned" heading -- "js-" prefixed classes are GitHub's own
+   * behavior hooks (this one drives pinned-repo drag-to-reorder), which
+   * tend to stay stable since removing them would break that feature, not
+   * just its styling. Returns each pinned repo as "name -- description"
+   * (description omitted when a repo doesn't have one).
+   * @returns {string[]}
+   */
+  function getPinnedRepos() {
+    const heading = Array.from(document.querySelectorAll('h2')).find((h2) =>
+      cleanText(h2).startsWith('Pinned')
+    );
+    const list = heading?.parentElement?.querySelector('ol.js-pinned-items-reorder-list');
+    if (!list) return [];
+
+    return Array.from(list.children)
+      .map((item) => {
+        const link = item.querySelector('a[href^="/"]');
+        if (!link) return null;
+        const name = link.getAttribute('href').replace(/^\//, '');
+        const description = cleanText(item.querySelector('p'));
+        return description ? `${name} -- ${description}` : name;
+      })
+      .filter(Boolean);
+  }
+
+  /**
+   * @returns {{author: string, text: string, url: string}|null}
+   */
+  function buildOrgCapture() {
+    const segments = location.pathname.split('/').filter(Boolean);
+    const login = segments[0];
+    if (!login) return null;
+
+    const { name, bio, website } = getOrgProfile();
+    const pinned = getPinnedRepos();
+
+    const parts = [bio];
+    if (website) parts.push(`Website: ${website}`);
+    if (pinned.length > 0) parts.push(`Pinned repositories:\n${pinned.map((p) => `- ${p}`).join('\n')}`);
+    const text = parts.filter(Boolean).join('\n\n');
+    if (!text) return null;
+
+    return { author: name || login, text, url: `${location.origin}/${login}` };
+  }
+
+  // ---- Page type ----
+
+  /**
+   * @returns {'repo'|'org'|null}
+   */
+  function detectPageType() {
+    if (isRepoRootPage()) return 'repo';
+    if (isOrgPage()) return 'org';
+    return null;
+  }
+
+  const IDLE_LABELS = { repo: 'Capture repo', org: 'Capture org' };
+
+  // ---- Floating button ----
+
+  /**
    * Same mark used on x.com/LinkedIn, built with the SVG DOM API rather than
    * an innerHTML string for consistency with linkedin.js (GitHub doesn't
    * enforce Trusted Types the way LinkedIn does, but there's no reason for
@@ -144,10 +287,10 @@
    */
   function createCaptureIcon() {
     const svg = document.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('class', 'capture-agent-btn-github-icon');
+    svg.setAttribute('class', 'capture-agent-github-fab-icon');
     svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '14');
-    svg.setAttribute('height', '14');
+    svg.setAttribute('width', '16');
+    svg.setAttribute('height', '16');
     svg.setAttribute('fill', 'none');
     svg.setAttribute('stroke', 'currentColor');
     svg.setAttribute('stroke-width', '2');
@@ -162,141 +305,97 @@
   }
 
   /**
-   * @returns {HTMLLIElement}
-   */
-  function createButton() {
-    const li = document.createElement('li');
-    li.className = 'capture-agent-btn-github-item';
-
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'capture-agent-btn capture-agent-btn-github';
-    button.appendChild(createCaptureIcon());
-
-    const labelSpan = document.createElement('span');
-    labelSpan.className = 'capture-agent-btn-github-label';
-    labelSpan.textContent = 'Capture';
-    button.appendChild(labelSpan);
-
-    button.setAttribute('data-capture-agent-state', 'idle');
-    li.appendChild(button);
-    return li;
-  }
-
-  /**
-   * @param {HTMLButtonElement} button
+   * @param {HTMLButtonElement} fab
    * @param {string} text
    */
-  function setButtonLabel(button, text) {
-    button.querySelector('.capture-agent-btn-github-label').textContent = text;
+  function setFabLabel(fab, text) {
+    fab.querySelector('.capture-agent-github-fab-label').textContent = text;
   }
 
   /**
-   * Mirrors linkedin.js's sendCapture -- same CAPTURE_POST message shape and
-   * idle/loading/success/error button lifecycle.
-   * @param {{author: string, text: string, url: string}} params
-   * @param {HTMLButtonElement} button
+   * Computes the capture payload fresh from the live DOM at click time
+   * (rather than at button-creation time), so the single persistent fab
+   * never needs rebinding after a Turbo navigation swaps the page under it.
+   * @param {Event} event
    */
-  function sendCapture({ author, text, url }, button) {
-    if (!text || button.disabled) return;
+  function handleFabClick(event) {
+    event.preventDefault();
+    const fab = event.currentTarget;
+    if (fab.disabled) return;
+
+    const pageType = detectPageType();
+    const data = pageType === 'repo' ? buildRepoCapture() : pageType === 'org' ? buildOrgCapture() : null;
+    if (!data) return;
 
     if (!chrome.runtime?.id) {
-      setButtonLabel(button, 'Refresh page to capture');
-      button.setAttribute('data-capture-agent-state', 'error');
+      setFabLabel(fab, 'Refresh page to capture');
+      fab.setAttribute('data-capture-agent-state', 'error');
       return;
     }
 
-    button.disabled = true;
-    setButtonLabel(button, 'Capturing...');
-    button.setAttribute('data-capture-agent-state', 'loading');
+    fab.disabled = true;
+    setFabLabel(fab, 'Capturing...');
+    fab.setAttribute('data-capture-agent-state', 'loading');
 
     chrome.runtime.sendMessage(
       {
         type: 'CAPTURE_POST',
         platform: 'github',
-        payload: { author, text, url, postedAt: null },
+        payload: { author: data.author, text: data.text, url: data.url, postedAt: null },
         capturedAt: new Date().toISOString(),
       },
       (response) => {
         const lastError = chrome.runtime.lastError;
         if (lastError || !response?.ok) {
           console.error('[CaptureAgent] GitHub capture failed', lastError?.message || response?.error);
-          setButtonLabel(button, 'Failed -- retry');
-          button.setAttribute('data-capture-agent-state', 'error');
-          button.disabled = false;
+          setFabLabel(fab, 'Failed -- retry');
+          fab.setAttribute('data-capture-agent-state', 'error');
+          fab.disabled = false;
           return;
         }
 
-        setButtonLabel(button, '✓ Captured');
-        button.setAttribute('data-capture-agent-state', 'success');
+        setFabLabel(fab, '✓ Captured');
+        fab.setAttribute('data-capture-agent-state', 'success');
         setTimeout(() => {
-          setButtonLabel(button, 'Capture');
-          button.setAttribute('data-capture-agent-state', 'idle');
-          button.disabled = false;
+          // Recomputed rather than reusing the pageType captured at click
+          // time: a Turbo navigation to a different page type could land
+          // during this delay, and the label should reflect where the fab
+          // actually is now, not where it was clicked.
+          const currentType = detectPageType();
+          setFabLabel(fab, currentType ? IDLE_LABELS[currentType] : 'Capture');
+          fab.setAttribute('data-capture-agent-state', 'idle');
+          fab.disabled = false;
         }, RESET_DELAY_MS);
       }
     );
   }
 
   /**
-   * `.pagehead-actions` is the Star/Watch/Fork <ul> in the repo header --
-   * unlike the root-only h2 landmark, this list persists across every repo
-   * subpage, which is exactly why isRepoRootPage() (not this) gates
-   * injection.
-   * @returns {Element|null}
+   * Created once and reused across the whole page lifetime (including
+   * Turbo navigations) -- `#capture-agent-github-fab` makes creation
+   * idempotent, and the click handler reads live DOM state rather than
+   * anything captured at creation time, so there's nothing to rebind.
+   * @returns {HTMLButtonElement}
    */
-  function findActionsBar() {
-    return document.querySelector('ul.pagehead-actions');
+  function getOrCreateFab() {
+    let fab = document.getElementById(FAB_ID);
+    if (fab) return fab;
+
+    fab = document.createElement('button');
+    fab.id = FAB_ID;
+    fab.type = 'button';
+    fab.className = 'capture-agent-github-fab';
+    fab.appendChild(createCaptureIcon());
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'capture-agent-github-fab-label';
+    fab.appendChild(labelSpan);
+
+    fab.setAttribute('data-capture-agent-state', 'idle');
+    fab.addEventListener('click', handleFabClick);
+    document.body.appendChild(fab);
+    return fab;
   }
-
-  function injectButton() {
-    if (!isRepoRootPage()) return;
-
-    const actionsBar = findActionsBar();
-    if (!actionsBar || actionsBar.getAttribute(INJECTED_ATTR) === 'true') return;
-
-    const ownerRepo = getOwnerRepo();
-    if (!ownerRepo) return;
-
-    const description = getRepoDescription();
-    const website = getRepoWebsite();
-    const readme = getReadmeText();
-    // The website line sits with the description (not its own '---' section)
-    // so it reads as part of the "about" summary rather than a third,
-    // separate block. Plain-text "Website: <url>" so the sidepanel's
-    // existing regex link-scan (extractExternalUrls in sidepanel.js) picks
-    // it up as a link pill for free -- no sidepanel changes needed for that.
-    const about = [description, website ? `Website: ${website}` : ''].filter(Boolean).join('\n');
-    const text = [about, readme].filter(Boolean).join('\n\n---\n\n');
-    if (!text) return;
-
-    const url = `${location.origin}/${ownerRepo.owner}/${ownerRepo.repo}`;
-    const li = createButton();
-    const button = li.querySelector('button');
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      sendCapture({ author: ownerRepo.owner, text, url }, button);
-    });
-
-    actionsBar.appendChild(li);
-    actionsBar.setAttribute(INJECTED_ATTR, 'true');
-  }
-
-  /**
-   * Removes a stale injected button (and the root-page injected marker) when
-   * navigation lands on a non-root page, so returning to root later
-   * re-evaluates cleanly instead of finding a stale `INJECTED_ATTR`.
-   */
-  function cleanupIfNotRoot() {
-    if (isRepoRootPage()) return;
-    const actionsBar = findActionsBar();
-    if (!actionsBar) return;
-    actionsBar.removeAttribute(INJECTED_ATTR);
-    actionsBar.querySelectorAll('.capture-agent-btn-github-item').forEach((el) => el.remove());
-  }
-
-  let observer = null;
 
   function scan() {
     // Mirrors linkedin.js's orphaned-content-script guard: bail out if the
@@ -310,9 +409,23 @@
       return;
     }
 
-    cleanupIfNotRoot();
-    injectButton();
+    const pageType = detectPageType();
+    const existingFab = document.getElementById(FAB_ID);
+
+    if (!pageType) {
+      existingFab?.remove();
+      return;
+    }
+
+    const fab = getOrCreateFab();
+    // Don't clobber a label mid-capture (loading/success/error) just
+    // because a mutation elsewhere triggered a rescan.
+    if (fab.getAttribute('data-capture-agent-state') === 'idle') {
+      setFabLabel(fab, IDLE_LABELS[pageType]);
+    }
   }
+
+  let observer = null;
 
   const SCAN_DEBOUNCE_MS = 200;
   let debounceTimer = null;
@@ -326,23 +439,20 @@
 
     scan();
 
-    // GitHub's repo browser is a Turbo (PJAX) app: navigating between the
-    // repo root and its subpages (or between repos, via the file tree)
-    // swaps the DOM in place without a full page load, so document_idle's
-    // single pass isn't enough. Verified live: window.Turbo is present, and
-    // clicking an in-app repo link fires turbo:load with the new DOM already
-    // in place.
+    // GitHub's repo/org pages are a Turbo (PJAX) app: navigating between
+    // them swaps the DOM in place without a full page load, so
+    // document_idle's single pass isn't enough. Verified live: window.Turbo
+    // is present, and clicking an in-app link fires turbo:load with the new
+    // DOM already in place.
     document.addEventListener('turbo:load', scan);
 
-    // The file listing + README themselves render via a client-side React
-    // app (a <react-app app-name="code-view"> boundary) that can still be
-    // hydrating when document_idle fires, especially on a cold load of a
-    // large repo -- the isRepoRootPage() landmark and the readme content
-    // simply aren't in the DOM yet at that point. turbo:load doesn't cover
-    // this case (it only fires on subsequent in-app navigations), so a
-    // MutationObserver -- debounced, same as linkedin.js -- rescans while
-    // that initial render is still settling. injectButton()'s INJECTED_ATTR
-    // check keeps the repeated scans idempotent once the button lands.
+    // The file listing + README (and org profile header) themselves render
+    // via a client-side React app that can still be hydrating when
+    // document_idle fires, especially on a cold load of a large repo -- the
+    // page-type landmarks simply aren't in the DOM yet at that point.
+    // turbo:load doesn't cover this case (it only fires on subsequent
+    // in-app navigations), so a MutationObserver -- debounced, same as
+    // linkedin.js -- rescans while that initial render is still settling.
     observer = new MutationObserver(scheduleScan);
     observer.observe(document.body, { childList: true, subtree: true });
   }
