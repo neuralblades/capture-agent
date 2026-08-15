@@ -237,6 +237,7 @@ const PLATFORM_LABELS = {
   linkedin: "LinkedIn",
   web_selection: "Web",
   rss: "RSS",
+  github: "GitHub",
 };
 
 function platformLabel(platform) {
