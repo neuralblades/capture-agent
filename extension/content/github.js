@@ -261,14 +261,29 @@
     actionsBar.querySelectorAll('.capture-agent-btn-github-item').forEach((el) => el.remove());
   }
 
+  let observer = null;
+
   function scan() {
     // Mirrors linkedin.js's orphaned-content-script guard: bail out if the
     // extension was reloaded/updated while this script is still attached to
     // an open tab.
-    if (!chrome.runtime?.id) return;
+    if (!chrome.runtime?.id) {
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+      return;
+    }
 
     cleanupIfNotRoot();
     injectButton();
+  }
+
+  const SCAN_DEBOUNCE_MS = 200;
+  let debounceTimer = null;
+  function scheduleScan() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(scan, SCAN_DEBOUNCE_MS);
   }
 
   function init() {
@@ -281,10 +296,20 @@
     // swaps the DOM in place without a full page load, so document_idle's
     // single pass isn't enough. Verified live: window.Turbo is present, and
     // clicking an in-app repo link fires turbo:load with the new DOM already
-    // in place (no MutationObserver needed -- unlike LinkedIn's virtualized
-    // feed, GitHub's content isn't streamed in incrementally after the
-    // navigation event).
+    // in place.
     document.addEventListener('turbo:load', scan);
+
+    // The file listing + README themselves render via a client-side React
+    // app (a <react-app app-name="code-view"> boundary) that can still be
+    // hydrating when document_idle fires, especially on a cold load of a
+    // large repo -- the isRepoRootPage() landmark and the readme content
+    // simply aren't in the DOM yet at that point. turbo:load doesn't cover
+    // this case (it only fires on subsequent in-app navigations), so a
+    // MutationObserver -- debounced, same as linkedin.js -- rescans while
+    // that initial render is still settling. injectButton()'s INJECTED_ATTR
+    // check keeps the repeated scans idempotent once the button lands.
+    observer = new MutationObserver(scheduleScan);
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
   if (document.readyState === 'loading') {
