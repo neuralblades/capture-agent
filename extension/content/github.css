@@ -1,0 +1,61 @@
+/* Styling for the .capture-agent-btn injected into GitHub's repo header
+   action row (.pagehead-actions). Self-contained (github.js doesn't share
+   content.css, which is x.com-specific), sized to sit naturally alongside
+   GitHub's own Watch/Fork/Star buttons. */
+
+.capture-agent-btn-github-item {
+  display: inline-block;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.capture-agent-btn-github {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid rgba(27, 31, 36, 0.15);
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: #24292f;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.capture-agent-btn-github-icon {
+  flex-shrink: 0;
+  display: block;
+}
+
+.capture-agent-btn-github:hover:not(:disabled) {
+  background-color: #f3f4f6;
+  border-color: rgba(27, 31, 36, 0.3);
+}
+
+.capture-agent-btn-github[data-capture-agent-state="loading"] {
+  color: #0969da;
+  cursor: default;
+}
+
+.capture-agent-btn-github[data-capture-agent-state="success"] {
+  color: #ffffff;
+  background-color: #1a7f37;
+  border-color: #1a7f37;
+}
+
+.capture-agent-btn-github[data-capture-agent-state="error"] {
+  color: #ffffff;
+  background-color: #cf222e;
+  border-color: #cf222e;
+}
+
+.capture-agent-btn-github:disabled {
+  cursor: default;
+}

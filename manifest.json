@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Capture posts from X.com and LinkedIn, or any selected text on the web, and hand them off to Capture Agent's AI workflows.",
   "permissions": ["activeTab","storage", "sidePanel", "contextMenus"],
-  "host_permissions": ["https://x.com/*", "https://twitter.com/*", "https://*.linkedin.com/*", "https://docs.google.com/forms/*", "http://localhost:8000/*"],
+  "host_permissions": ["https://x.com/*", "https://twitter.com/*", "https://*.linkedin.com/*", "https://github.com/*", "https://docs.google.com/forms/*", "http://localhost:8000/*"],
   "background": {
     "service_worker": "extension/background/background.js",
     "type": "module"
@@ -49,6 +49,12 @@
       "matches": ["https://*.linkedin.com/*"],
       "js": ["extension/content/linkedin.js"],
       "css": ["extension/content/linkedin.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://github.com/*/*"],
+      "js": ["extension/content/github.js"],
+      "css": ["extension/content/github.css"],
       "run_at": "document_idle"
     }
   ],
