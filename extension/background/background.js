@@ -17,7 +17,17 @@ const MESSAGE_TYPES = Object.freeze({
   GENERATE_FORM_ANSWER: 'GENERATE_FORM_ANSWER',
   MAP_FORM_FIELDS: 'MAP_FORM_FIELDS',
   RUN_ACTION: 'RUN_ACTION',
+  // options.js calls chrome.permissions.request()/.remove() itself (must
+  // happen directly in the click handler to count as a user gesture), then
+  // sends one of these once granted/revoked so background.js -- which owns
+  // script-registration state -- does the actual
+  // chrome.scripting.registerContentScripts()/unregisterContentScripts() call.
+  POWER_MODE_ENABLED: 'POWER_MODE_ENABLED',
+  POWER_MODE_DISABLED: 'POWER_MODE_DISABLED',
 });
+
+const CAPTURE_MODE_KEY = 'captureMode';
+const POWER_MODE_SCRIPT_ID = 'capture-agent-generic-capture';
 
 const FORM_ANSWER_ENDPOINT = 'http://localhost:8000/generate-form-answer';
 const MAP_FORM_FIELDS_ENDPOINT = 'http://localhost:8000/map-form-fields';
@@ -179,6 +189,60 @@ async function runAction(message) {
   throw new Error(`Unsupported action: ${message.action}`);
 }
 
+/**
+ * Registers Power Mode's floating-button script dynamically -- not in
+ * manifest.json's static content_scripts -- so it only exists (and only
+ * ever actually injects, per registerContentScripts()'s own behavior once
+ * a matching host permission is granted) after the user explicitly opts in
+ * from the options page. Guards against Chrome's "duplicate id" error on a
+ * repeat enable (e.g. across service-worker restarts, or the options page
+ * somehow firing this twice) by checking what's already registered first --
+ * registrations persist across worker restarts on their own, so this is
+ * "register if not already registered", not an unconditional call.
+ */
+async function registerPowerModeScript() {
+  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [POWER_MODE_SCRIPT_ID] });
+  if (existing.length > 0) return;
+
+  await chrome.scripting.registerContentScripts([
+    {
+      id: POWER_MODE_SCRIPT_ID,
+      matches: ['<all_urls>'],
+      js: ['extension/content/generic_extract.js', 'extension/content/generic_capture.js'],
+      css: ['extension/content/generic_capture.css'],
+      runAt: 'document_idle',
+    },
+  ]);
+}
+
+async function unregisterPowerModeScript() {
+  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [POWER_MODE_SCRIPT_ID] });
+  if (existing.length === 0) return;
+  await chrome.scripting.unregisterContentScripts({ ids: [POWER_MODE_SCRIPT_ID] });
+}
+
+/**
+ * @returns {Promise<void>}
+ */
+async function enablePowerMode() {
+  await registerPowerModeScript();
+  await chrome.storage.local.set({ [CAPTURE_MODE_KEY]: 'power' });
+}
+
+/**
+ * Unregistering stops *future* injections; already-open tabs still have the
+ * script running until they navigate. The broadcast tells any of those to
+ * remove their button immediately instead of lingering -- generic_capture.js
+ * listens for exactly this message. Best-effort (no listener is the common
+ * case when Power Mode was never on, or no matching tabs are open).
+ * @returns {Promise<void>}
+ */
+async function disablePowerMode() {
+  await unregisterPowerModeScript();
+  await chrome.storage.local.set({ [CAPTURE_MODE_KEY]: 'standard' });
+  chrome.runtime.sendMessage({ type: MESSAGE_TYPES.POWER_MODE_DISABLED }).catch(() => {});
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message) {
     return false;
@@ -224,6 +288,28 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then((mappings) => sendResponse({ ok: true, mappings }))
       .catch((error) => {
         console.error('[CaptureAgent] Field mapping failed', error);
+        sendResponse({ ok: false, error: error.message });
+      });
+
+    return true;
+  }
+
+  if (message.type === MESSAGE_TYPES.POWER_MODE_ENABLED) {
+    enablePowerMode()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => {
+        console.error('[CaptureAgent] Power Mode enable failed', error);
+        sendResponse({ ok: false, error: error.message });
+      });
+
+    return true;
+  }
+
+  if (message.type === MESSAGE_TYPES.POWER_MODE_DISABLED) {
+    disablePowerMode()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => {
+        console.error('[CaptureAgent] Power Mode disable failed', error);
         sendResponse({ ok: false, error: error.message });
       });
 

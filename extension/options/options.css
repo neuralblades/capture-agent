@@ -216,3 +216,17 @@ button:hover {
   font-size: 12.5px;
   margin: 18px 0 0;
 }
+
+.privacy-mode {
+  margin-top: 18px;
+}
+
+.privacy-mode:first-child {
+  margin-top: 0;
+}
+
+.privacy-mode-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--text);
+}

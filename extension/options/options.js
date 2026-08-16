@@ -212,3 +212,93 @@ feedForm.addEventListener('submit', async (event) => {
 });
 
 loadFeeds();
+
+// --- Privacy & Capture (Power Mode) -----------------------------------------
+// Deliberately not a plain radio pair that fires chrome.permissions.request()
+// as a side effect of selection -- <all_urls> is significant enough that the
+// explanation has to be read before Chrome's own prompt appears, not
+// stumbled into. chrome.permissions.request()/.remove() are called directly
+// in these click handlers (not after an intervening message round-trip)
+// since they must run within a real user gesture; the actual
+// register/unregister of the floating-button content script is delegated to
+// background.js, which owns that state.
+const CAPTURE_MODE_KEY = 'captureMode';
+
+const powerModeOffView = document.getElementById('power-mode-off-view');
+const powerModeOnView = document.getElementById('power-mode-on-view');
+const enablePowerModeBtn = document.getElementById('enable-power-mode-btn');
+const disablePowerModeBtn = document.getElementById('disable-power-mode-btn');
+const powerModeStatus = document.getElementById('power-mode-status');
+const powerModeStatusOn = document.getElementById('power-mode-status-on');
+
+function showPowerModeView(isPowerMode) {
+  powerModeOffView.hidden = isPowerMode;
+  powerModeOnView.hidden = !isPowerMode;
+}
+
+function showPowerModeStatus(el, message, isError = false) {
+  el.textContent = message;
+  el.classList.toggle('error', isError);
+}
+
+function sendBackgroundMessage(message) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve(response || { ok: false, error: 'No response from background' });
+    });
+  });
+}
+
+function loadPowerModeState() {
+  chrome.storage.local.get(CAPTURE_MODE_KEY, (result) => {
+    showPowerModeView(result[CAPTURE_MODE_KEY] === 'power');
+  });
+}
+
+enablePowerModeBtn.addEventListener('click', async () => {
+  enablePowerModeBtn.disabled = true;
+  showPowerModeStatus(powerModeStatus, '');
+  try {
+    const granted = await chrome.permissions.request({ origins: ['<all_urls>'] });
+    if (!granted) {
+      showPowerModeStatus(powerModeStatus, 'Permission denied.', true);
+      return;
+    }
+
+    const response = await sendBackgroundMessage({ type: 'POWER_MODE_ENABLED' });
+    if (!response.ok) {
+      showPowerModeStatus(powerModeStatus, response.error || 'Failed to enable Power Mode.', true);
+      return;
+    }
+    showPowerModeView(true);
+  } catch (error) {
+    showPowerModeStatus(powerModeStatus, error.message || 'Permission request failed.', true);
+  } finally {
+    enablePowerModeBtn.disabled = false;
+  }
+});
+
+disablePowerModeBtn.addEventListener('click', async () => {
+  disablePowerModeBtn.disabled = true;
+  showPowerModeStatus(powerModeStatusOn, '');
+  try {
+    const response = await sendBackgroundMessage({ type: 'POWER_MODE_DISABLED' });
+    if (!response.ok) {
+      showPowerModeStatus(powerModeStatusOn, response.error || 'Failed to disable Power Mode.', true);
+      return;
+    }
+    // Revoked last, after the content script is already unregistered -- if
+    // this were first, a page navigating mid-toggle could momentarily hold
+    // the permission with nothing registered to use it.
+    await chrome.permissions.remove({ origins: ['<all_urls>'] });
+    showPowerModeView(false);
+  } finally {
+    disablePowerModeBtn.disabled = false;
+  }
+});
+
+loadPowerModeState();
