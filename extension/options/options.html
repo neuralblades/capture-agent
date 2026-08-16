@@ -115,6 +115,39 @@
       </form>
 
       <ul id="feedList" class="feed-list"></ul>
+
+      <h1 class="section-heading">Privacy &amp; Capture</h1>
+
+      <div id="power-mode-off-view">
+        <div class="privacy-mode">
+          <h3 class="privacy-mode-title">Standard Mode (default)</h3>
+          <p class="hint">
+            Capture a page only when you explicitly trigger it -- right-click the page or the
+            toolbar icon, or use the keyboard shortcut. No special permissions needed.
+          </p>
+        </div>
+
+        <div class="privacy-mode">
+          <h3 class="privacy-mode-title">Power Mode</h3>
+          <p class="hint">
+            Show a capture button automatically on webpages that look capturable.<br />
+            Power Mode requires permission to read webpage content on sites you visit. Chrome
+            will ask you to allow this before it turns on.
+          </p>
+          <div class="actions">
+            <button id="enable-power-mode-btn" type="button">Enable Power Mode</button>
+            <span id="power-mode-status" class="status" role="status" aria-live="polite"></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="power-mode-on-view" hidden>
+        <p class="hint">● Power Mode is on -- a capture button shows automatically on capturable pages.</p>
+        <div class="actions">
+          <button id="disable-power-mode-btn" type="button">Disable Power Mode</button>
+          <span id="power-mode-status-on" class="status" role="status" aria-live="polite"></span>
+        </div>
+      </div>
     </main>
     <script src="options.js"></script>
   </body>

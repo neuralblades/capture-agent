@@ -3,8 +3,9 @@
   "name": "Capture Agent",
   "version": "0.1.0",
   "description": "Capture posts from X.com and LinkedIn, or any selected text on the web, and hand them off to Capture Agent's AI workflows.",
-  "permissions": ["activeTab","storage", "sidePanel", "contextMenus"],
+  "permissions": ["activeTab","storage", "sidePanel", "contextMenus", "scripting"],
   "host_permissions": ["https://x.com/*", "https://twitter.com/*", "https://*.linkedin.com/*", "https://github.com/*", "https://docs.google.com/forms/*", "http://localhost:8000/*"],
+  "optional_host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "extension/background/background.js",
     "type": "module"
@@ -60,5 +61,11 @@
   ],
   "action": {
     "default_title": "Capture Agent"
+  },
+  "commands": {
+    "capture-agent-capture-page": {
+      "suggested_key": { "default": "Alt+Shift+X" },
+      "description": "Capture Agent: Capture this page"
+    }
   }
 }

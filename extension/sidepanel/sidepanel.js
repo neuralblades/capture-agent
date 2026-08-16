@@ -940,6 +940,13 @@ if (hasExtensionRuntime && chrome.runtime.onMessage) {
       loadCategories();
       if (state.view === VIEW_OVERVIEW) loadStats();
     }
+    // Sent by context_menu.js's three "Capture this page" triggers (right-click
+    // page/icon, keyboard shortcut) -- shows the same message here as a toast
+    // when the panel happens to be open, on top of the toolbar badge/tooltip
+    // those triggers always show regardless.
+    if (message?.type === "CAPTURE_FEEDBACK") {
+      showToast(message.message, !message.ok);
+    }
     if (message?.type === MessageType.ITEMS_UPDATED && Array.isArray(message.items)) {
       applyAppliedState(message.items);
       state.items = message.items;
