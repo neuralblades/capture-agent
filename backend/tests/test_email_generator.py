@@ -34,7 +34,7 @@ def test_generate_cold_email_parses_response_into_generated_email():
 
     assert result == GeneratedEmail(**payload)
     _, kwargs = fake_client.chat.completions.create.call_args
-    assert kwargs["model"] == "llama-3.3-70b-versatile"
+    assert kwargs["model"] == "openai/gpt-oss-120b"
     assert kwargs["response_format"] == {"type": "json_object"}
     assert "jane@example.com" in kwargs["messages"][1]["content"]
     assert "Alex at Acme" in kwargs["messages"][1]["content"]

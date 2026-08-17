@@ -67,7 +67,7 @@ FastAPI service that turns raw captured text into structured, actionable data.
 - `llm_processor.py` — resolves a reference date and delegates extraction to the configured provider.
 - `providers/` — adapter pattern over LLM backends (`base.py` defines the `LLMProvider` interface and shared system prompt; `anthropic_provider.py` and `groq_provider.py` implement it). Selected at runtime via the `LLM_PROVIDER` env var and cached per-process.
 - `contact_extractor.py` — regex-based contact email detection run on captured post content, independent of the LLM providers.
-- `email_generator.py` — drafts a cold outreach email (subject + body) for `POST /generate-email` via Groq's Llama 3.3 70B, given post context and an optional sender name/company.
+- `email_generator.py` — drafts a cold outreach email (subject + body) for `POST /generate-email` via Groq's GPT-OSS 120B, given post context and an optional sender name/company.
 - `models.py` — Pydantic contracts (`CapturedPost`, `ExtractionResult`, `Deadline`, `PostRecord`, `GenerateEmailRequest`, `GeneratedEmail`) shared with the extension's JSON shape.
 - `database.py` — SQLite persistence (`capture_agent.db`), one `posts` row per captured item with JSON-encoded `tags`/`deadlines` and a detected `contact_email`.
 - `tests/` — pytest suite (provider adapters, extraction, DB, API), run in CI via `.github/workflows/backend-tests.yml`.

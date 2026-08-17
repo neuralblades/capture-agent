@@ -1,4 +1,4 @@
-"""Cold outreach email generation via Groq's Llama 3.3 70B.
+"""Cold outreach email generation via Groq's GPT-OSS 120B.
 
 Separate from providers/ since it produces a subject/body draft rather than
 the ExtractionResult shape the LLMProvider adapter interface is built around.
@@ -22,7 +22,7 @@ from pydantic import ValidationError
 
 from models import GeneratedEmail
 
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "openai/gpt-oss-120b"
 
 SYSTEM_PROMPT = """You write concise, high-converting cold outreach emails on behalf of a user, based on a social media post they captured and want to follow up on.
 
