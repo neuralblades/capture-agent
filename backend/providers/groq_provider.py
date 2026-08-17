@@ -1,4 +1,4 @@
-"""Groq adapter for structured post extraction using Llama 3.3 70B."""
+"""Groq adapter for structured post extraction using GPT-OSS 120B."""
 from __future__ import annotations
 
 import json
@@ -19,7 +19,7 @@ from providers.base import (
     LLMProvider,
 )
 
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "openai/gpt-oss-120b"
 
 # Groq's JSON mode (unlike Anthropic's structured `output_format`) only guarantees
 # valid JSON, not a specific shape, so the schema has to be spelled out in-prompt.
@@ -49,7 +49,7 @@ Respond with ONLY a single JSON object (no surrounding text or markdown) of this
 
 
 class GroqProvider(LLMProvider):
-    """Extracts structured post data using Groq's Llama 3.3 70B model."""
+    """Extracts structured post data using Groq's GPT-OSS 120B model."""
 
     def __init__(self) -> None:
         self._client: Groq | None = None

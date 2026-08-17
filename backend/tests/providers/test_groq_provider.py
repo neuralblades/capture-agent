@@ -34,7 +34,7 @@ def test_extract_parses_json_content_into_extraction_result():
 
     assert result == ExtractionResult(**payload)
     _, kwargs = fake_client.chat.completions.create.call_args
-    assert kwargs["model"] == "llama-3.3-70b-versatile"
+    assert kwargs["model"] == "openai/gpt-oss-120b"
     assert kwargs["response_format"] == {"type": "json_object"}
     assert "2026-08-12" in kwargs["messages"][0]["content"]
     assert kwargs["messages"][1]["content"] == "some content"
@@ -167,7 +167,7 @@ def test_generate_form_answer_returns_text_and_includes_profile():
 
     assert answer == "I'd love to join because..."
     _, kwargs = fake_client.chat.completions.create.call_args
-    assert kwargs["model"] == "llama-3.3-70b-versatile"
+    assert kwargs["model"] == "openai/gpt-oss-120b"
     assert "Jane Doe" in kwargs["messages"][0]["content"]
     assert kwargs["messages"][1]["content"] == "Why do you want to join?"
 
@@ -203,7 +203,7 @@ def test_calculate_match_parses_json_content_into_match_result():
 
     assert result == MatchResult(**payload)
     _, kwargs = fake_client.chat.completions.create.call_args
-    assert kwargs["model"] == "llama-3.3-70b-versatile"
+    assert kwargs["model"] == "openai/gpt-oss-120b"
     assert kwargs["response_format"] == {"type": "json_object"}
     assert "Experienced Python + FastAPI dev" in kwargs["messages"][0]["content"]
     assert kwargs["messages"][1]["content"] == "We need Python, FastAPI, and Docker"
