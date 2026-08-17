@@ -185,6 +185,44 @@ def test_poll_feed_resolves_posted_at_from_published_parsed(isolated_db):
     assert (posted_at.year, posted_at.month, posted_at.day) == (2026, 8, 10)
 
 
+def test_entry_content_combines_title_and_summary():
+    entry = {"title": "Real Headline", "summary": "Extra detail"}
+    assert feed_poller._entry_content(entry) == "Real Headline\n\nExtra detail"
+
+
+def test_entry_content_title_only():
+    entry = {"title": "Real Headline", "summary": ""}
+    assert feed_poller._entry_content(entry) == "Real Headline"
+
+
+def test_entry_content_summary_only():
+    entry = {"title": "", "summary": "Extra detail"}
+    assert feed_poller._entry_content(entry) == "Extra detail"
+
+
+def test_entry_content_both_empty():
+    entry = {"title": "", "summary": ""}
+    assert feed_poller._entry_content(entry) == ""
+
+
+def test_entry_content_strips_html_from_summary():
+    entry = {"title": "Real Headline", "summary": "<p>Extra <b>detail</b> &amp; more</p>"}
+    assert feed_poller._entry_content(entry) == "Real Headline\n\nExtra  detail  & more"
+
+
+def test_poll_feed_uses_title_when_summary_is_boilerplate(isolated_db):
+    feed_id = database.add_feed(url="https://news.example.com/feed.xml", label="HN")
+    feed = database.get_feed(feed_id)
+
+    entries = [_entry("guid-1", title="Real Headline About Something", summary="Comments")]
+    capture = RecordingCapture()
+
+    with patch("feed_poller.feedparser.parse", return_value=_fake_parse(entries)):
+        asyncio.run(feed_poller.poll_feed(feed, capture))
+
+    assert capture.calls[0].content == "Real Headline About Something\n\nComments"
+
+
 def test_poll_all_feeds_polls_every_subscribed_feed(isolated_db):
     database.add_feed(url="https://a.example.com/feed.xml", label="A")
     database.add_feed(url="https://b.example.com/feed.xml", label="B")
