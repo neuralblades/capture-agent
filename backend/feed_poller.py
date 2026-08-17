@@ -9,8 +9,10 @@ manual /capture already goes through.
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
@@ -25,13 +27,24 @@ CaptureFn = Callable[[CapturedPost], PostRecord]
 
 POLL_INTERVAL_SECONDS = int(os.environ.get("FEED_POLL_INTERVAL_SECONDS", 20 * 60))
 
+_TAG_RE = re.compile(r"<[^>]+>")
+
 
 def _entry_guid(entry: dict[str, Any]) -> Optional[str]:
     return entry.get("id") or entry.get("link") or entry.get("title") or None
 
 
+def _strip_html(text: str) -> str:
+    """feedparser's sanitizer removes unsafe tags but leaves safe ones (e.g. <p>, <a>)
+    intact, so summaries can still carry markup that shouldn't reach the LLM as content."""
+    return html.unescape(_TAG_RE.sub(" ", text)).strip()
+
+
 def _entry_content(entry: dict[str, Any]) -> str:
-    return entry.get("summary") or entry.get("title") or ""
+    title = (entry.get("title") or "").strip()
+    summary = _strip_html(entry.get("summary") or "")
+    parts = [p for p in (title, summary) if p]
+    return "\n\n".join(parts)
 
 
 def _entry_posted_at(entry: dict[str, Any]) -> Optional[datetime]:
