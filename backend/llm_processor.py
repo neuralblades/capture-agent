@@ -8,14 +8,27 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import database
 from models import ExtractionResult, FieldMapping, FormFieldDescriptor, MatchResult, ProfileContext
 from providers import get_provider
+from providers.base import normalize_category
 
 
 def extract_post_data(content: str, captured_at: datetime | None = None) -> ExtractionResult:
-    """Run captured post content through the configured LLM provider."""
+    """Run captured post content through the configured LLM provider.
+
+    Passes the distinct categories already in the database as reuse-context
+    (see providers.base.SYSTEM_PROMPT's category instruction), and runs the
+    result's category through normalize_category() as a deterministic
+    safety net -- this is the one call site every extraction goes through
+    regardless of provider, so it's the right place for both.
+    """
     reference_date = (captured_at or datetime.now(timezone.utc)).date().isoformat()
-    return get_provider().extract(content, reference_date)
+    existing_categories = [row["name"] for row in database.category_counts() if row["name"] != "All"]
+
+    result = get_provider().extract(content, reference_date, existing_categories)
+    result.category = normalize_category(result.category)
+    return result
 
 
 def generate_form_answer(question: str, profile: ProfileContext) -> str:

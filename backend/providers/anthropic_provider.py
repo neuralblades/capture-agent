@@ -12,6 +12,7 @@ from providers.base import (
     MAP_FORM_FIELDS_SYSTEM_PROMPT,
     MATCH_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
+    format_existing_categories,
     format_form_fields,
     format_profile,
     LLMProvider,
@@ -38,11 +39,16 @@ class AnthropicProvider(LLMProvider):
             self._client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
         return self._client
 
-    def extract(self, content: str, reference_date: str) -> ExtractionResult:
+    def extract(
+        self, content: str, reference_date: str, existing_categories: list[str] | None = None
+    ) -> ExtractionResult:
         response = self.get_client().messages.parse(
             model=MODEL,
             max_tokens=2048,
-            system=SYSTEM_PROMPT.format(reference_date=reference_date),
+            system=SYSTEM_PROMPT.format(
+                reference_date=reference_date,
+                existing_categories=format_existing_categories(existing_categories or []),
+            ),
             messages=[{"role": "user", "content": content}],
             output_format=ExtractionResult,
         )

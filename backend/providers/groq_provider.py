@@ -13,6 +13,7 @@ from providers.base import (
     MAP_FORM_FIELDS_SYSTEM_PROMPT,
     MATCH_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
+    format_existing_categories,
     format_form_fields,
     format_profile,
     LLMProvider,
@@ -59,8 +60,16 @@ class GroqProvider(LLMProvider):
             self._client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
         return self._client
 
-    def extract(self, content: str, reference_date: str) -> ExtractionResult:
-        system_prompt = SYSTEM_PROMPT.format(reference_date=reference_date) + JSON_INSTRUCTIONS
+    def extract(
+        self, content: str, reference_date: str, existing_categories: list[str] | None = None
+    ) -> ExtractionResult:
+        system_prompt = (
+            SYSTEM_PROMPT.format(
+                reference_date=reference_date,
+                existing_categories=format_existing_categories(existing_categories or []),
+            )
+            + JSON_INSTRUCTIONS
+        )
 
         response = self.get_client().chat.completions.create(
             model=MODEL,

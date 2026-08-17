@@ -3,8 +3,11 @@
 // shares the same service worker lifecycle.
 //
 // 1. Right-click "Capture with Opportunity Agent" on selected text, for a
-//    short quote/sentence -- submits the selection verbatim as a
-//    'web_selection' capture, unchanged from before.
+//    short quote/sentence -- submits the (trimmed) selection as a
+//    'web_selection' capture. Gated on a low minimum length (see
+//    MIN_SELECTION_CHARS below) -- this was previously the one capture path
+//    with no content gate at all, which was producing junk categories from
+//    near-empty selections (see issue #61).
 // 2. "Capture this page" -- for a whole blog post/article/announcement.
 //    Reachable via three activeTab-qualifying gestures: right-clicking the
 //    page (contexts: ['page']), right-clicking the toolbar icon itself
@@ -45,6 +48,13 @@ const BLOCK_REASON_MESSAGES = {
   'thin-content': "Not much to go on here -- try a page with more actual content.",
 };
 const GENERIC_FAILURE_MESSAGE = "Hmm, couldn't capture that one -- give it another try?";
+
+// The one thing this path is explicitly *for* is short quotes/sentences, so
+// this stays low on purpose -- it's only meant to catch near-empty
+// selections (a stray UI label, a signup-form field fragment) that were
+// sailing straight to the LLM with zero gating and coming back as junk
+// categories (see issue #61), not to second-guess a genuinely short quote.
+const MIN_SELECTION_CHARS = 10;
 
 // Menu items registered here persist across service worker restarts (Chrome
 // stores them independently of the worker's lifetime), so onInstalled --
@@ -165,15 +175,25 @@ async function handleCaptureCurrentTabTrigger(tab) {
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === SELECTION_MENU_ID) {
     if (!info.selectionText) return;
+
+    const trimmed = info.selectionText.trim();
+    if (trimmed.length < MIN_SELECTION_CHARS) {
+      showCaptureFeedback(false, "That's too short to bother the AI with -- select a bit more text.");
+      return;
+    }
+
     submitCapture({
       platform: 'web_selection',
       author: null,
-      content: info.selectionText,
+      content: trimmed,
       url: tab?.url ?? info.pageUrl ?? null,
       capturedAt: new Date().toISOString(),
-    }).catch((error) => {
-      console.error('[CaptureAgent] Failed to capture selection', error);
-    });
+    })
+      .then(() => showCaptureFeedback(true, 'Captured! 📌'))
+      .catch((error) => {
+        console.error('[CaptureAgent] Failed to capture selection', error);
+        showCaptureFeedback(false, GENERIC_FAILURE_MESSAGE);
+      });
     return;
   }
 
