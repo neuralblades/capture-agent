@@ -10,7 +10,7 @@ SYSTEM_PROMPT = """You extract structured information from social media posts ca
 
 For each post:
 - Write a one-sentence summary.
-- Assign a single, concise category that best captures what the post is about, as an open-ended 1-2 word phrase (e.g. "AI Tools", "Research", "Finance", "Career", "Deadlines"). Do not restrict yourself to a fixed list -- pick whatever category name most naturally fits the post's topic, using Title Case.
+- Assign a single, concise category that best captures what the post is about, as an open-ended 1-2 word phrase (e.g. "AI Tools", "Research", "Finance", "Career", "Deadlines"). Reuse one of the existing categories listed below if it reasonably fits the post's topic -- only invent a new one if none of them do; small wording differences ("Job Posting" vs "Job Opening") should collapse into whichever existing one already covers it, not multiply. Use Title Case, except keep any of these acronyms capitalized exactly as shown regardless of Title Case rules: AI, ML, API, SaaS, CLI, SDK, UI, UX, SEO, NLP. If the post's content is too thin or ambiguous to meaningfully categorize (a stray UI label, a signup/login page fragment, near-empty text), use exactly "Uncategorized" rather than inventing a placeholder word for it.
 - Assign a few short topical tags.
 - Find every deadline or time-sensitive commitment mentioned (e.g. "due Friday", "in 2 weeks", "by EOD tomorrow"). Resolve each relative phrase to an absolute date in ISO 8601 (YYYY-MM-DD) using the reference date below. If a phrase can't be confidently resolved, set iso_date to null and give it a low confidence.
 - Set action_required to true if the post implies the reader must do something (respond, submit, register, pay, attend).
@@ -19,7 +19,16 @@ For each post:
 - Classify action_type based on what you found: "job_form" if external_url points to a job application form/portal, "cold_email" if a contact_email is given and there's no application form link, "general_link" if there's a third-party link that isn't a job application (e.g. an event page or registration form), or "none" if neither an external_url nor a contact_email was found.
 - Set is_opportunity to true only if the post represents something the user could apply/respond to with a clear next action -- a job posting, hackathon, scholarship, or freelance gig. Set it to false for books, articles, general commentary, and anything else without a concrete apply/respond action.
 
+Existing categories already in use (reuse one of these if it fits -- see the category instruction above): {existing_categories}
+
 Reference date (when this post was captured; resolve all relative dates against it): {reference_date}"""
+
+# Deterministic safety net applied after every extraction, regardless of
+# provider -- covers the rare prompt slip where the LLM returns inconsistent
+# acronym casing ("Ai Tools") despite the prompt's explicit instruction.
+KNOWN_ACRONYMS = ("AI", "ML", "API", "SaaS", "CLI", "SDK", "UI", "UX", "SEO", "NLP")
+
+UNCATEGORIZED = "Uncategorized"
 
 FORM_ANSWER_SYSTEM_PROMPT = """You write short, first-person answers to open-ended job/application form questions on behalf of an applicant, using their profile below. Answer only the question asked, in 2-4 sentences, in a natural human voice. Do not invent facts that aren't supported by the profile -- write generally instead of fabricating specifics. Respond with the answer text only, no preamble, no quotes, no markdown.
 
@@ -86,12 +95,42 @@ def format_form_fields(fields: list[FormFieldDescriptor]) -> str:
     return json.dumps([field.model_dump() for field in fields])
 
 
+def format_existing_categories(categories: list[str]) -> str:
+    """Render the current distinct category list for prompt inclusion, so the
+    LLM can reuse one instead of re-inventing a near-duplicate every capture."""
+    return ", ".join(categories) if categories else "(none yet -- this is the first capture)"
+
+
+def normalize_category(category: str) -> str:
+    """Deterministic safety net run on every extraction result regardless of
+    provider: trims whitespace, re-capitalizes any known acronym to its
+    canonical form (so "Ai Tools"/"ai tools" collapse to "AI Tools" instead of
+    fragmenting the category list by casing alone), and falls back to the
+    single Uncategorized bucket for an empty result rather than leaving
+    whatever ad-hoc placeholder the LLM produced."""
+    trimmed = category.strip()
+    if not trimmed:
+        return UNCATEGORIZED
+
+    words = trimmed.split()
+    fixed_words = [next((acr for acr in KNOWN_ACRONYMS if acr.lower() == word.lower()), word) for word in words]
+    return " ".join(fixed_words)
+
+
 class LLMProvider(ABC):
     """Adapter interface for a structured-extraction LLM backend."""
 
     @abstractmethod
-    def extract(self, content: str, reference_date: str) -> ExtractionResult:
-        """Extract a structured summary, tags, and deadlines from post content."""
+    def extract(
+        self, content: str, reference_date: str, existing_categories: list[str] | None = None
+    ) -> ExtractionResult:
+        """Extract a structured summary, tags, and deadlines from post content.
+
+        existing_categories: the distinct categories already in the database
+        (see database.category_counts()), passed so the LLM can reuse one
+        instead of inventing a near-duplicate. Optional/defaults to none so
+        existing callers that don't have this data yet don't break.
+        """
         raise NotImplementedError
 
     @abstractmethod
