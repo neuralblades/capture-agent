@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -560,6 +560,79 @@ def test_applied_count_reflects_whole_table_not_just_one_page(client):
     resp = client.get("/stats/applied-count")
     assert resp.status_code == 200
     assert resp.json() == {"count": 1}
+
+
+def test_applied_count_rejects_invalid_window(client):
+    resp = client.get("/stats/applied-count", params={"window": "last_month"})
+    assert resp.status_code == 422
+
+
+def test_applied_count_with_window_scopes_to_captures_in_that_window(client):
+    with patch("main.extract_post_data", return_value=FAKE_JOB_RESULT):
+        resp = client.post("/capture", json={"platform": "twitter", "content": "opportunity today"})
+    post_id = resp.json()["id"]
+    client.patch(f"/posts/{post_id}", json={"status": "applied"})
+
+    resp = client.get("/stats/applied-count", params={"window": "today"})
+    assert resp.status_code == 200
+    assert resp.json() == {"count": 1}
+
+    resp = client.get("/stats/applied-count", params={"window": "yesterday"})
+    assert resp.status_code == 200
+    assert resp.json() == {"count": 0}
+
+
+def test_captures_count_empty_db_returns_zero(client):
+    resp = client.get("/stats/captures-count")
+    assert resp.status_code == 200
+    assert resp.json() == {"count": 0}
+
+
+def test_captures_count_counts_only_opportunities_all_time(client):
+    with patch("main.extract_post_data", return_value=FAKE_JOB_RESULT):
+        client.post("/capture", json={"platform": "twitter", "content": "job 1"})
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        client.post("/capture", json={"platform": "twitter", "content": "non-opportunity"})
+
+    resp = client.get("/stats/captures-count")
+    assert resp.status_code == 200
+    assert resp.json() == {"count": 1}
+
+
+def test_captures_count_with_window_scopes_to_today(client):
+    with patch("main.extract_post_data", return_value=FAKE_JOB_RESULT):
+        client.post("/capture", json={"platform": "twitter", "content": "job today"})
+
+    resp = client.get("/stats/captures-count", params={"window": "today"})
+    assert resp.status_code == 200
+    assert resp.json() == {"count": 1}
+
+    resp = client.get("/stats/captures-count", params={"window": "yesterday"})
+    assert resp.status_code == 200
+    assert resp.json() == {"count": 0}
+
+
+def test_posts_with_window_filters_to_captures_in_that_window(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        resp = client.post("/capture", json={"platform": "twitter", "content": "today's post"})
+    today_id = resp.json()["id"]
+
+    old_captured_at = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        client.post(
+            "/capture",
+            json={"platform": "twitter", "content": "old post", "captured_at": old_captured_at},
+        )
+
+    resp = client.get("/posts", params={"window": "today"})
+    assert resp.status_code == 200
+    ids = [p["id"] for p in resp.json()]
+    assert ids == [today_id]
+
+
+def test_posts_rejects_invalid_window(client):
+    resp = client.get("/posts", params={"window": "last_month"})
+    assert resp.status_code == 422
 
 
 def test_categories_aggregates_across_posts(client):

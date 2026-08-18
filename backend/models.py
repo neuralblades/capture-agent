@@ -226,9 +226,18 @@ class MatchResult(BaseModel):
 
 class AppliedCount(BaseModel):
     """Total opportunity posts marked status='applied', across the whole table (not just one
-    page of GET /posts) -- the numerator for the sidepanel's conversion-rate stat."""
+    page of GET /posts) -- the numerator for the sidepanel's conversion-rate stat. Optionally
+    scoped to a trailing time window (see StatsWindow) instead of all-time."""
 
     count: int = Field(..., description="Number of posts with is_opportunity=true and status='applied'")
+
+
+class CapturesCount(BaseModel):
+    """Total opportunity posts captured, across the whole table or scoped to a trailing time
+    window (see StatsWindow) -- the denominator for the sidepanel's conversion-rate stat, and
+    the value behind its "Jobs Captured" tile."""
+
+    count: int = Field(..., description="Number of posts with is_opportunity=true")
 
 
 class CategoryCount(BaseModel):

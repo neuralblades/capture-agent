@@ -28,6 +28,7 @@ from models import (
     AppliedCount,
     CalculateMatchRequest,
     CapturedPost,
+    CapturesCount,
     CategoryCount,
     FeedCreate,
     FeedRecord,
@@ -161,8 +162,25 @@ def get_categories() -> list[CategoryCount]:
 
 
 @app.get("/stats/applied-count", response_model=AppliedCount)
-def get_applied_count() -> AppliedCount:
-    return AppliedCount(count=database.count_applied_opportunities())
+def get_applied_count(
+    window: database.StatsWindow | None = Query(
+        None, description="Restrict to opportunities captured within this trailing window ('today'/'yesterday'/'last_week'); all-time when omitted"
+    ),
+) -> AppliedCount:
+    if window is None:
+        return AppliedCount(count=database.count_applied_opportunities())
+    return AppliedCount(count=database.count_applied_opportunities_in_window(window))
+
+
+@app.get("/stats/captures-count", response_model=CapturesCount)
+def get_captures_count(
+    window: database.StatsWindow | None = Query(
+        None, description="Restrict to opportunities captured within this trailing window ('today'/'yesterday'/'last_week'); all-time when omitted"
+    ),
+) -> CapturesCount:
+    if window is None:
+        return CapturesCount(count=database.count_opportunities())
+    return CapturesCount(count=database.count_opportunities_in_window(window))
 
 
 @app.get("/stats/overview", response_model=StatsOverview)
@@ -190,8 +208,14 @@ def map_form_fields_route(request: MapFormFieldsRequest) -> MapFormFieldsRespons
 
 
 @app.get("/posts", response_model=list[PostRecord])
-def get_posts(limit: int = 50, offset: int = 0) -> list[PostRecord]:
-    return [PostRecord(**row) for row in database.list_posts(limit=limit, offset=offset)]
+def get_posts(
+    limit: int = 50,
+    offset: int = 0,
+    window: database.StatsWindow | None = Query(
+        None, description="Restrict to posts captured within this trailing window ('today'/'yesterday'/'last_week'); all posts when omitted"
+    ),
+) -> list[PostRecord]:
+    return [PostRecord(**row) for row in database.list_posts(limit=limit, offset=offset, window=window)]
 
 
 @app.get("/posts/{post_id}", response_model=PostRecord)
