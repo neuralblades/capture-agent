@@ -3,13 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <title>Capture Agent</title>
-    <script>
-      // Applied synchronously (before CSS/first paint) so opening this page as a
-      // full-tab dashboard (?mode=dashboard) doesn't flash the docked layout first.
-      if (new URLSearchParams(location.search).get("mode") === "dashboard") {
-        document.documentElement.classList.add("dashboard-mode");
-      }
-    </script>
+    <script src="dashboard-mode-init.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
