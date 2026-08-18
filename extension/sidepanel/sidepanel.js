@@ -19,6 +19,29 @@ const VIEW_OVERVIEW = "overview";
 /** Page size for `GET /posts?limit=&offset=`, both for the initial load and each "Load More". */
 const POSTS_PAGE_SIZE = 50;
 
+/** Full-tab dashboard mode (issue #68) is opted into via ?mode=dashboard,
+ * not viewport-width sniffing -- the side panel is user-resizable, so width
+ * alone isn't a reliable signal for which layout to render. */
+const DASHBOARD_MODE_PARAM = "mode";
+const DASHBOARD_MODE_VALUE = "dashboard";
+
+/** Sidebar sections for dashboard mode. Each maps onto filters that already
+ * exist for docked mode (platform tabs, the is_opportunity flag, Overview) --
+ * see switchDashboardSection(). Categories stay a filter *within* a section
+ * rather than becoming a section of their own (LLM-open-ended, numerous). */
+const DASHBOARD_SECTIONS = [
+  { id: "inbox", label: "Inbox" },
+  { id: "rss", label: "RSS" },
+  { id: "github", label: "GitHub" },
+  { id: "jobs", label: "Jobs" },
+  { id: "overview", label: "Overview" },
+];
+
+/** Section id -> platform filter, for the sections that are really just a
+ * platform tab relocated into the sidebar. Sections not listed here (inbox,
+ * jobs, overview) don't filter by platform. */
+const DASHBOARD_SECTION_PLATFORM = { rss: "rss", github: "github" };
+
 /** Sample data used only when no extension runtime is present (e.g. previewing the HTML directly). */
 const SAMPLE_ITEMS = [
   {
@@ -110,11 +133,17 @@ const state = {
   offset: 0,
   hasMore: false,
   loadingMore: false,
+  dashboardMode: new URLSearchParams(location.search).get(DASHBOARD_MODE_PARAM) === DASHBOARD_MODE_VALUE,
+  dashboardSection: "inbox",
+  // Jobs section filter -- reuses the is_opportunity flag rather than a platform,
+  // so it's tracked separately from activePlatform (see filteredItems()).
+  jobsOnly: false,
 };
 
 const els = {
   tabs: document.getElementById("tabs"),
   platformTabs: document.getElementById("platform-tabs"),
+  dashboardSidebar: document.getElementById("dashboard-sidebar"),
   list: document.getElementById("list"),
   loadMoreBtn: document.getElementById("load-more-btn"),
   emptyState: document.getElementById("empty-state"),
@@ -600,11 +629,68 @@ function isResurfaced(item) {
   return !Number.isNaN(at.getTime()) && at.getTime() <= Date.now();
 }
 
+/** Live counts for the dashboard sidebar's badges. Inbox/RSS/GitHub reuse the
+ * same per-platform counts the (hidden, in dashboard mode) platform tabs
+ * already compute; Jobs has no existing count to reuse, so it's a plain
+ * length of state.items filtered by is_opportunity. */
+function dashboardSectionCounts() {
+  const byPlatform = Object.fromEntries(platformsFromItems(state.items).map((p) => [p.key, p.count]));
+  return {
+    inbox: byPlatform[ALL_PLATFORM] || 0,
+    rss: byPlatform.rss || 0,
+    github: byPlatform.github || 0,
+    jobs: state.items.filter((item) => item.isOpportunity).length,
+  };
+}
+
+function renderDashboardSidebar() {
+  if (!state.dashboardMode) return;
+  const counts = dashboardSectionCounts();
+
+  els.dashboardSidebar.innerHTML = "";
+  for (const section of DASHBOARD_SECTIONS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "dashboard-nav-item";
+    btn.role = "tab";
+    btn.dataset.sectionId = section.id;
+    btn.setAttribute("aria-selected", String(section.id === state.dashboardSection));
+    btn.appendChild(document.createTextNode(section.label));
+    if (section.id in counts) {
+      btn.appendChild(
+        Object.assign(document.createElement("span"), {
+          className: "dashboard-nav-count",
+          textContent: String(counts[section.id]),
+        })
+      );
+    }
+    btn.addEventListener("click", () => switchDashboardSection(section.id));
+    els.dashboardSidebar.appendChild(btn);
+  }
+}
+
+/** Switches the active dashboard sidebar section. Reuses the same filter
+ * state docked mode's platform tabs / Overview toggle already drive -- the
+ * fetch/filter/render logic underneath is identical, only which section is
+ * "active" changes. Resets category filter/search-independent state per
+ * section on switch (reasonable since sections are meant to be small, fixed
+ * buckets, not scroll positions to preserve). */
+function switchDashboardSection(sectionId) {
+  state.dashboardSection = sectionId;
+  state.activeTab = ALL_CATEGORY;
+  state.jobsOnly = sectionId === "jobs";
+  state.activePlatform = DASHBOARD_SECTION_PLATFORM[sectionId] || ALL_PLATFORM;
+
+  render();
+  switchView(sectionId === "overview" ? VIEW_OVERVIEW : VIEW_LIST);
+}
+
 function filteredItems() {
   const q = state.query.trim().toLowerCase();
   const items = state.items.filter((item) => {
     if (state.activeTab !== ALL_CATEGORY && item.category !== state.activeTab) return false;
     if (state.activePlatform !== ALL_PLATFORM && item.platform !== state.activePlatform) return false;
+    if (state.jobsOnly && !item.isOpportunity) return false;
     if (item.lifecycleStatus === ItemStatus.ARCHIVED) return false;
     if (!q) return true;
     return (
@@ -671,7 +757,10 @@ function platformsFromItems(items) {
  * simultaneously-active filters (see filteredItems()), not mutually exclusive. */
 function renderPlatformTabs() {
   const platforms = platformsFromItems(state.items);
-  if (!platforms.some((p) => p.key === state.activePlatform)) {
+  // In dashboard mode a section (e.g. RSS) should stay selected even when it
+  // currently has zero matching items, rather than silently falling back to
+  // "All" the way a stale docked-mode platform tab would.
+  if (!state.dashboardMode && !platforms.some((p) => p.key === state.activePlatform)) {
     state.activePlatform = ALL_PLATFORM;
   }
 
@@ -1197,6 +1286,7 @@ function render() {
   renderTabs();
   renderList();
   renderLoadMoreButton();
+  renderDashboardSidebar();
 }
 
 els.viewTabList.addEventListener("click", () => switchView(VIEW_LIST));
@@ -1264,11 +1354,13 @@ async function boot() {
     state.offset = SAMPLE_ITEMS.length;
     state.hasMore = false;
     render();
+    if (state.dashboardMode) switchDashboardSection(state.dashboardSection);
     return;
   }
   await loadPosts();
   loadCategories();
   loadAppliedCount();
+  if (state.dashboardMode) switchDashboardSection(state.dashboardSection);
 }
 
 if (document.readyState === "loading") {

@@ -28,6 +28,7 @@ import { submitCapture } from './capture_client.js';
 const SELECTION_MENU_ID = 'capture-agent-capture-selection';
 const PAGE_MENU_ID = 'capture-agent-capture-page-menu';
 const ACTION_MENU_ID = 'capture-agent-capture-page-action';
+const OPEN_DASHBOARD_MENU_ID = 'capture-agent-open-dashboard';
 const COMMAND_ID = 'capture-agent-capture-page';
 
 const BADGE_RESET_MS = 2500;
@@ -74,6 +75,17 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: ACTION_MENU_ID,
     title: 'Capture this page with Opportunity Agent',
+    contexts: ['action'],
+  });
+  // Same html/js/data layer as the docked side panel (sidepanel.html is also
+  // side_panel.default_path), opened as a normal tab with a URL param that
+  // switches it to the sidebar-nav dashboard layout -- see sidepanel.js's
+  // DASHBOARD_MODE_PARAM. Lives on the toolbar icon's own right-click menu
+  // (contexts: ['action']) rather than as a button inside the panel, so the
+  // docked side panel's markup/appearance stays completely unchanged.
+  chrome.contextMenus.create({
+    id: OPEN_DASHBOARD_MENU_ID,
+    title: 'Open full dashboard',
     contexts: ['action'],
   });
 });
@@ -199,6 +211,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
   if (info.menuItemId === PAGE_MENU_ID || info.menuItemId === ACTION_MENU_ID) {
     handleCaptureCurrentTabTrigger(tab);
+    return;
+  }
+
+  if (info.menuItemId === OPEN_DASHBOARD_MENU_ID) {
+    chrome.tabs.create({ url: chrome.runtime.getURL('extension/sidepanel/sidepanel.html') + '?mode=dashboard' });
   }
 });
 
