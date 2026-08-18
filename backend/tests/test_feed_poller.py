@@ -223,6 +223,53 @@ def test_poll_feed_uses_title_when_summary_is_boilerplate(isolated_db):
     assert capture.calls[0].content == "Real Headline About Something\n\nComments"
 
 
+def test_entry_image_returns_none_when_no_media_present():
+    entry = {"title": "Plain entry", "summary": "no media here"}
+    assert feed_poller._entry_image(entry) is None
+
+
+def test_entry_image_prefers_media_thumbnail():
+    entry = {
+        "media_thumbnail": [{"url": "https://example.com/thumb.jpg"}],
+        "media_content": [{"url": "https://example.com/content.jpg", "medium": "image"}],
+    }
+    assert feed_poller._entry_image(entry) == "https://example.com/thumb.jpg"
+
+
+def test_entry_image_falls_back_to_media_content_typed_as_image():
+    entry = {"media_content": [{"url": "https://example.com/content.jpg", "medium": "image"}]}
+    assert feed_poller._entry_image(entry) == "https://example.com/content.jpg"
+
+
+def test_entry_image_ignores_non_image_media_content():
+    entry = {"media_content": [{"url": "https://example.com/clip.mp4", "medium": "video"}]}
+    assert feed_poller._entry_image(entry) is None
+
+
+def test_entry_image_falls_back_to_image_enclosure():
+    entry = {"enclosures": [{"href": "https://example.com/photo.png", "type": "image/png"}]}
+    assert feed_poller._entry_image(entry) == "https://example.com/photo.png"
+
+
+def test_entry_image_ignores_non_image_enclosure():
+    entry = {"enclosures": [{"href": "https://example.com/episode.mp3", "type": "audio/mpeg"}]}
+    assert feed_poller._entry_image(entry) is None
+
+
+def test_poll_feed_captures_entry_image_url(isolated_db):
+    feed_id = database.add_feed(url="https://blog.example.com/feed.xml", label="Example Blog")
+    feed = database.get_feed(feed_id)
+
+    entry = _entry("guid-1")
+    entry["media_thumbnail"] = [{"url": "https://example.com/thumb.jpg"}]
+    capture = RecordingCapture()
+
+    with patch("feed_poller.feedparser.parse", return_value=_fake_parse([entry])):
+        asyncio.run(feed_poller.poll_feed(feed, capture))
+
+    assert capture.calls[0].image_url == "https://example.com/thumb.jpg"
+
+
 def test_poll_all_feeds_polls_every_subscribed_feed(isolated_db):
     database.add_feed(url="https://a.example.com/feed.xml", label="A")
     database.add_feed(url="https://b.example.com/feed.xml", label="B")

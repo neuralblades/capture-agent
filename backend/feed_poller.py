@@ -54,6 +54,28 @@ def _entry_posted_at(entry: dict[str, Any]) -> Optional[datetime]:
     return datetime(*parsed[:6], tzinfo=timezone.utc)
 
 
+def _entry_image(entry: dict[str, Any]) -> Optional[str]:
+    """Best-effort representative image for a feed entry, checked in order of
+    reliability: Media RSS's <media:thumbnail> (feedparser exposes it as
+    media_thumbnail), then <media:content> entries explicitly typed as an
+    image, then a plain <enclosure> typed as an image. Most feeds carry none
+    of these, so returning None here is the common (and correct) case."""
+    thumbnails = entry.get("media_thumbnail") or []
+    if thumbnails and thumbnails[0].get("url"):
+        return thumbnails[0]["url"]
+
+    for media in entry.get("media_content") or []:
+        url = media.get("url")
+        if url and (media.get("medium") == "image" or (media.get("type") or "").startswith("image/")):
+            return url
+
+    for enclosure in entry.get("enclosures") or []:
+        if enclosure.get("href") and (enclosure.get("type") or "").startswith("image/"):
+            return enclosure["href"]
+
+    return None
+
+
 def _new_entries(entries: list[dict[str, Any]], last_seen_guid: Optional[str]) -> list[dict[str, Any]]:
     """Entries not yet captured, oldest first.
 
@@ -91,6 +113,7 @@ async def poll_feed(feed: dict[str, Any], capture_fn: CaptureFn) -> None:
             content=content,
             url=entry.get("link"),
             posted_at=_entry_posted_at(entry),
+            image_url=_entry_image(entry),
         )
         try:
             await asyncio.to_thread(capture_fn, post)

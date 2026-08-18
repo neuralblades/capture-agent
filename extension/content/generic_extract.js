@@ -153,7 +153,7 @@
   }
 
   /**
-   * @returns {{title: string, description: string, author: string|null, bodyText: string, url: string}}
+   * @returns {{title: string, description: string, author: string|null, bodyText: string, url: string, imageUrl: string|null}}
    */
   function extractGenericPage() {
     const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
@@ -166,10 +166,15 @@
 
     const author = document.querySelector('meta[name="author"]')?.content || null;
 
+    // og:image -- the standard "share card" image most sites already declare
+    // -- rather than a heuristic DOM scrape, which would be far less reliable
+    // across arbitrary sites than it is for the hand-verified platforms.
+    const imageUrl = document.querySelector('meta[property="og:image"]')?.content || null;
+
     const container = findContentContainer(MIN_SEMANTIC_CONTAINER_CHARS);
     const bodyText = container ? container.innerText.trim().slice(0, MAX_BODY_CHARS) : '';
 
-    return { title, description: description.trim(), author, bodyText, url: location.href };
+    return { title, description: description.trim(), author, bodyText, url: location.href, imageUrl };
   }
 
   /**

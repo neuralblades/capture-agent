@@ -166,10 +166,10 @@
   /**
    * Sends a CAPTURE_POST message for the given fields and reflects the
    * result in the button's label/state, mirroring x.com's capture button UX.
-   * @param {{platform: string, author: string|null, text: string, url: string, idleLabel: string, postedAt: string|null}} params
+   * @param {{platform: string, author: string|null, text: string, url: string, idleLabel: string, postedAt: string|null, imageUrl?: string|null}} params
    * @param {HTMLButtonElement} button
    */
-  function sendCapture({ platform, author, text, url, idleLabel, postedAt }, button) {
+  function sendCapture({ platform, author, text, url, idleLabel, postedAt, imageUrl }, button) {
     if (!text || button.disabled) return;
 
     if (!chrome.runtime?.id) {
@@ -186,7 +186,7 @@
       {
         type: 'CAPTURE_POST',
         platform,
-        payload: { author, text, url, postedAt: postedAt ?? null },
+        payload: { author, text, url, postedAt: postedAt ?? null, imageUrl: imageUrl ?? null },
         capturedAt: new Date().toISOString(),
       },
       (response) => {
@@ -301,6 +301,22 @@
   }
 
   /**
+   * A feed post's attached image (single-image posts; the first image of a
+   * multi-image carousel) sits inside LinkedIn's "update-components-image"
+   * wrapper -- part of LinkedIn's own component-library naming, not the
+   * hashed atomic classes this file otherwise avoids relying on (see the
+   * file-level comment), so it's stable enough to anchor on directly. Text
+   * posts and article/link shares don't carry this wrapper, so this cleanly
+   * returns null for them -- no image is the common, expected case.
+   * @param {Element} card
+   * @returns {string|null}
+   */
+  function getPostImage(card) {
+    const img = card.querySelector('.update-components-image img[src]');
+    return img ? img.src : null;
+  }
+
+  /**
    * Not every post exposes a permalink in the DOM (promoted posts especially),
    * so this falls back to the feed URL itself when one can't be found.
    * @param {Element} card
@@ -326,12 +342,13 @@
 
     const url = getPostUrl(card);
     const postedAt = getFeedPostedAt(card);
+    const imageUrl = getPostImage(card);
 
     const button = createButton('Capture');
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      sendCapture({ platform: 'linkedin', author, text, url, idleLabel: 'Capture', postedAt }, button);
+      sendCapture({ platform: 'linkedin', author, text, url, idleLabel: 'Capture', postedAt, imageUrl }, button);
     });
 
     actionBar.appendChild(button);

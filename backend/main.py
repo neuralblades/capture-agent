@@ -117,6 +117,7 @@ def capture_post(post: CapturedPost) -> PostRecord:
         category=extraction.category,
         is_opportunity=extraction.is_opportunity,
         posted_at=post.posted_at.isoformat() if post.posted_at else None,
+        image_url=post.image_url,
     )
 
     record = database.get_post(post_id)

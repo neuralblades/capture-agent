@@ -151,7 +151,7 @@ async function captureCurrentTab(tab) {
     throw new Error(BLOCK_REASON_MESSAGES[result.blocked] || GENERIC_FAILURE_MESSAGE);
   }
 
-  const { title, description, author, bodyText, url } = result.extracted;
+  const { title, description, author, bodyText, url, imageUrl } = result.extracted;
   const content = [title, description, bodyText].filter(Boolean).join('\n\n');
   if (!content) {
     throw new Error(GENERIC_FAILURE_MESSAGE);
@@ -171,6 +171,7 @@ async function captureCurrentTab(tab) {
     content,
     url: url || tab.url || null,
     capturedAt: new Date().toISOString(),
+    imageUrl: imageUrl ?? null,
   });
 }
 

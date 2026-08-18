@@ -76,7 +76,7 @@
     if (fab.disabled) return;
 
     if (!window.__captureAgent.isPageLikelyCapturable()) return;
-    const { title, description, author, bodyText, url } = window.__captureAgent.extractGenericPage();
+    const { title, description, author, bodyText, url, imageUrl } = window.__captureAgent.extractGenericPage();
     const content = [title, description, bodyText].filter(Boolean).join('\n\n');
     if (!content) return;
 
@@ -101,7 +101,7 @@
       {
         type: 'CAPTURE_POST',
         platform,
-        payload: { author, text: content, url: url || location.href, postedAt: null },
+        payload: { author, text: content, url: url || location.href, postedAt: null, imageUrl: imageUrl ?? null },
         capturedAt: new Date().toISOString(),
       },
       (response) => {

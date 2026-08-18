@@ -131,11 +131,27 @@
   }
 
   /**
+   * The tweet's primary image, for use as a representative thumbnail: the
+   * first photo if the tweet has one, else a video's poster frame (the still
+   * image X shows before playback), else null for text-only tweets.
+   * @param {import('./types.js').CaptureMedia[]} media
+   * @returns {string|null}
+   */
+  function extractImageUrl(article, media) {
+    const photo = media.find((item) => item.type === 'photo');
+    if (photo) return photo.url;
+
+    const video = queryOwnFirst(article, SELECTORS.video);
+    return video?.poster || null;
+  }
+
+  /**
    * @param {Element} article
    * @returns {import('./types.js').CaptureTweetPayload}
    */
   function extractTweetPayload(article) {
     const { tweetId, url } = extractTweetIdAndUrl(article);
+    const media = extractMedia(article);
 
     return {
       tweetId,
@@ -143,7 +159,8 @@
       author: extractAuthor(article),
       text: extractText(article),
       timestamp: extractTimestamp(article),
-      media: extractMedia(article),
+      media,
+      imageUrl: extractImageUrl(article, media),
     };
   }
 

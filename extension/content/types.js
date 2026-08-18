@@ -24,6 +24,7 @@
    * @property {string|null} url - absolute status URL
    * @property {string|null} timestamp - ISO 8601 datetime from the tweet's <time> element
    * @property {CaptureMedia[]} media
+   * @property {string|null} imageUrl - the tweet's primary image, if any (first photo, or a video's poster frame)
    *
    * @typedef {Object} CaptureMessage
    * @property {string} type - one of MESSAGE_TYPES

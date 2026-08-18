@@ -180,6 +180,7 @@ def test_init_db_migrates_legacy_table_missing_new_columns(tmp_path, monkeypatch
     assert record["status"] is None
     assert record["notes"] is None
     assert record["resurface_at"] is None
+    assert record["image_url"] is None
 
 
 def test_init_db_is_idempotent_on_already_migrated_table(isolated_db):
@@ -220,6 +221,16 @@ def test_posted_at_defaults_to_none(isolated_db):
 def test_posted_at_round_trips(isolated_db):
     post_id = _insert(posted_at="2026-08-10T09:00:00+00:00")
     assert database.get_post(post_id)["posted_at"] == "2026-08-10T09:00:00+00:00"
+
+
+def test_image_url_defaults_to_none(isolated_db):
+    post_id = _insert()
+    assert database.get_post(post_id)["image_url"] is None
+
+
+def test_image_url_round_trips(isolated_db):
+    post_id = _insert(image_url="https://example.com/photo.jpg")
+    assert database.get_post(post_id)["image_url"] == "https://example.com/photo.jpg"
 
 
 def test_status_notes_resurface_at_default_to_none(isolated_db):
