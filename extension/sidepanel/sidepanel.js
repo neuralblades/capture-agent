@@ -159,11 +159,12 @@ const els = {
   overviewView: document.getElementById("overview-view"),
   overviewEmpty: document.getElementById("overview-empty"),
   overviewContent: document.getElementById("overview-content"),
-  overviewTotal: document.getElementById("overview-total"),
+  overviewStats: document.getElementById("overview-stats"),
   overviewPlatformBars: document.getElementById("overview-platform-bars"),
   overviewCategoryBars: document.getElementById("overview-category-bars"),
   overviewTrend: document.getElementById("overview-trend"),
   overviewTrendRange: document.getElementById("overview-trend-range"),
+  openDashboardBtn: document.getElementById("open-dashboard-btn"),
 };
 
 /** @returns {Promise<Record<string, unknown>>} Profile written by extension/options. */
@@ -528,7 +529,7 @@ async function loadStats() {
 }
 
 /** Renders one row per {name, count} entry (skipping the "All" total row,
- * which is surfaced separately as overview-total) as a bar scaled relative
+ * which is surfaced separately in the stat tiles) as a bar scaled relative
  * to the largest count in the list.
  * @param {HTMLElement} container
  * @param {{name: string, count: number}[]} rows
@@ -581,6 +582,29 @@ function renderTrendChart(container, trend) {
   }
 }
 
+/** Renders the "by the numbers" stat tiles at the top of Overview -- counts
+ * already available from the stats-overview response, just reshaped into
+ * tiles instead of the platform/category bar lists below them.
+ * @param {HTMLElement} container
+ * @param {{label: string, value: number}[]} tiles
+ */
+function renderStatTiles(container, tiles) {
+  container.innerHTML = "";
+  for (const { label, value } of tiles) {
+    const tile = document.createElement("div");
+    tile.className = "stat-tile";
+    const valueEl = document.createElement("span");
+    valueEl.className = "stat-tile-value";
+    valueEl.textContent = String(value);
+    const labelEl = document.createElement("span");
+    labelEl.className = "stat-tile-label";
+    labelEl.textContent = label;
+    tile.appendChild(valueEl);
+    tile.appendChild(labelEl);
+    container.appendChild(tile);
+  }
+}
+
 function renderOverview() {
   const stats = state.stats;
   const hasStats = !!stats;
@@ -590,7 +614,12 @@ function renderOverview() {
   els.overviewContent.hidden = !hasStats || total === 0;
   if (!hasStats || total === 0) return;
 
-  els.overviewTotal.textContent = `${total} capture${total === 1 ? "" : "s"} total`;
+  renderStatTiles(els.overviewStats, [
+    { label: "Total Captures", value: total },
+    { label: "Applied", value: state.appliedCount },
+    { label: "Categories", value: stats.category_counts.filter((c) => c.name !== "All").length },
+    { label: "Platforms", value: stats.platform_counts.filter((p) => p.name !== "All").length },
+  ]);
   renderBarList(els.overviewPlatformBars, stats.platform_counts, platformLabel);
   renderBarList(els.overviewCategoryBars, stats.category_counts);
   renderTrendChart(els.overviewTrend, stats.trend);
@@ -895,6 +924,38 @@ function buildResurfacedPill(item) {
   return pill;
 }
 
+/** Color variant for a card's category badge (issue #76): amber for anything
+ * deadline-flagged takes priority over the indigo "Jobs" treatment, since a
+ * looming deadline is the more urgent signal regardless of opportunity type. */
+function badgeVariant(item) {
+  if (item.type === ItemType.DEADLINE || item.dueDate) return "deadline";
+  if (item.isOpportunity) return "jobs";
+  return "neutral";
+}
+
+function buildCategoryBadge(item) {
+  const badge = document.createElement("span");
+  badge.className = `category-badge ${badgeVariant(item)}`;
+  badge.textContent = item.category;
+  badge.title = item.category;
+  return badge;
+}
+
+const STATUS_CHECK_SVG =
+  '<svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm4.3 6.3-5 5a1 1 0 0 1-1.4 0l-2.2-2.2a1 1 0 1 1 1.4-1.4l1.5 1.5 4.3-4.3a1 1 0 0 1 1.4 1.4Z" fill="currentColor"/></svg>';
+
+/** Row-level status-check icon (issue #76): reuses the same "applied"/free-text
+ * `status` field the checkbox/status-field below the card already edit, just
+ * surfaced as a glance-able indicator up in the card head. */
+function buildStatusCheck(item) {
+  const done = item.isOpportunity ? item.status === "applied" : !!(item.status && item.status.trim());
+  const check = document.createElement("span");
+  check.className = "status-check" + (done ? " done" : "");
+  check.title = done ? "Marked" : "Not marked";
+  check.innerHTML = STATUS_CHECK_SVG;
+  return check;
+}
+
 /** Shows/hides and labels the "Load More" control. Visible whenever the list view is
  * active and the backend has more pages, independent of the current filtered item
  * count -- appending more posts can surface matches even when the current filter
@@ -919,9 +980,7 @@ function renderList() {
     const head = document.createElement("div");
     head.className = "item-head";
 
-    const badge = document.createElement("span");
-    badge.className = `item-badge ${item.type}`;
-    head.appendChild(badge);
+    head.appendChild(buildCategoryBadge(item));
 
     const body = document.createElement("div");
     body.className = "item-body";
@@ -956,6 +1015,8 @@ function renderList() {
     }
 
     head.appendChild(body);
+
+    head.appendChild(buildStatusCheck(item));
 
     const resurfacedPill = buildResurfacedPill(item);
     if (resurfacedPill) head.appendChild(resurfacedPill);
@@ -1293,6 +1354,20 @@ function render() {
 
 els.viewTabList.addEventListener("click", () => switchView(VIEW_LIST));
 els.viewTabOverview.addEventListener("click", () => switchView(VIEW_OVERVIEW));
+
+/** Docked-panel-only entry point (hidden in dashboard mode via CSS) into the
+ * full-tab dashboard (?mode=dashboard) -- the sidebar-rendering logic already
+ * existed (issue #68) but had no trigger to open it (issue #76). */
+els.openDashboardBtn.addEventListener("click", () => {
+  const url = hasExtensionRuntime
+    ? chrome.runtime.getURL("extension/sidepanel/sidepanel.html") + `?${DASHBOARD_MODE_PARAM}=${DASHBOARD_MODE_VALUE}`
+    : `${location.pathname}?${DASHBOARD_MODE_PARAM}=${DASHBOARD_MODE_VALUE}`;
+  if (hasExtensionRuntime && chrome.tabs?.create) {
+    chrome.tabs.create({ url });
+  } else {
+    window.open(url, "_blank", "noopener");
+  }
+});
 
 els.loadMoreBtn.addEventListener("click", loadMorePosts);
 

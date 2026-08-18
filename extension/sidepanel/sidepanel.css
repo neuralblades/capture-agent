@@ -1,15 +1,30 @@
+/* ============================================================
+   SaaS token system -- Inbox/RSS/GitHub/Jobs, sidebar nav, docked
+   panel chrome (issue #76). This is the default look for the whole
+   app; Overview opts out of it below with its own newspaper tokens.
+   ============================================================ */
 :root {
-  color-scheme: dark;
-  --bg: #191a1e;
-  --bg-elevated: #212227;
-  --bg-hover: #2a2b31;
-  --border: #313239;
-  --text: #eceef1;
-  --text-dim: #9a9ba3;
-  --text-faint: #6c6d76;
-  --accent: #7c5cff;
-  --accent-dim: rgba(124, 92, 255, 0.16);
-  --danger: #ff6b6b;
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-elevated: #f7f7f5;
+  --bg-hover: #f1f1ef;
+  --border: #e9e9e7;
+  --border-soft: #f1f1ef;
+  --text: #37352f;
+  --text-dim: #6b6b65;
+  --text-faint: #8a8a85;
+  --accent: #3b4fcc;
+  --accent-dim: rgba(59, 79, 204, 0.1);
+  --accent-border: rgba(59, 79, 204, 0.35);
+  --amber: #9c6412;
+  --amber-dim: rgba(184, 117, 43, 0.12);
+  --amber-border: rgba(184, 117, 43, 0.4);
+  --danger: #c0392b;
+  --danger-dim: rgba(192, 57, 43, 0.1);
+  --danger-border: rgba(192, 57, 43, 0.32);
+  --success: #1e8e5a;
+  --success-dim: rgba(30, 142, 90, 0.12);
+  --success-border: rgba(30, 142, 90, 0.32);
   --radius: 10px;
   --radius-sm: 7px;
   font-family: -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
@@ -81,7 +96,32 @@ body {
 .sort-toggle[aria-pressed="true"] {
   background: var(--accent-dim);
   color: var(--accent);
-  border-color: rgba(124, 92, 255, 0.35);
+  border-color: var(--accent-border);
+}
+
+/* Full-dashboard entry point (issue #76). Icon-only button in the docked
+   panel header; hidden once already inside the full-tab dashboard (see the
+   .dashboard-mode rule near the bottom of this file). */
+.open-dashboard-btn {
+  flex-shrink: 0;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-dim);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.open-dashboard-btn:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border-color: var(--accent-border);
 }
 
 .search-wrap:focus-within {
@@ -172,10 +212,11 @@ body {
 .view-tab[aria-selected="true"] {
   background: var(--accent-dim);
   color: var(--accent);
-  border-color: rgba(124, 92, 255, 0.35);
+  border-color: var(--accent-border);
 }
 
-/* Overview */
+/* Overview -- layout only; the newspaper token system scoped to .overview
+   near the bottom of this file supplies all its colors/type/borders. */
 .overview {
   flex: 1;
   overflow-y: auto;
@@ -187,13 +228,6 @@ body {
 
 .overview[hidden] {
   display: none;
-}
-
-.overview-total {
-  margin: 0;
-  color: var(--text-dim);
-  font-size: 12px;
-  font-weight: 500;
 }
 
 .overview-block {
@@ -208,15 +242,7 @@ body {
   justify-content: space-between;
 }
 
-.overview-heading {
-  margin: 0;
-  color: var(--text);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
 .overview-trend-range {
-  color: var(--text-faint);
   font-size: 10.5px;
 }
 
@@ -235,7 +261,6 @@ body {
 
 .bar-label {
   flex: 0 0 78px;
-  color: var(--text-dim);
   font-size: 11.5px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -245,26 +270,19 @@ body {
 .bar-track {
   flex: 1;
   height: 8px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 999px;
   overflow: hidden;
 }
 
 .bar-fill {
   height: 100%;
   min-width: 2px;
-  background: var(--accent);
-  border-radius: 999px;
 }
 
 .bar-count {
   flex: 0 0 auto;
   min-width: 18px;
   text-align: right;
-  color: var(--text-faint);
   font-size: 11px;
-  font-weight: 600;
 }
 
 /* Capture trend */
@@ -274,19 +292,12 @@ body {
   gap: 2px;
   height: 56px;
   padding-top: 4px;
-  border-bottom: 1px solid var(--border);
 }
 
 .trend-bar {
   flex: 1;
   min-width: 2px;
-  background: var(--border);
-  border-radius: 2px 2px 0 0;
   min-height: 2px;
-}
-
-.trend-bar.has-captures {
-  background: var(--accent);
 }
 
 /* Tabs */
@@ -332,7 +343,7 @@ body {
 .tab[aria-selected="true"] {
   background: var(--accent-dim);
   color: var(--accent);
-  border-color: rgba(124, 92, 255, 0.35);
+  border-color: var(--accent-border);
 }
 
 .tab .tab-count {
@@ -361,7 +372,7 @@ body {
 }
 
 .item-card {
-  background: var(--bg-elevated);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 12px;
@@ -372,8 +383,8 @@ body {
 }
 
 .item-card:hover {
-  border-color: #3d3e46;
-  background: var(--bg-hover);
+  border-color: var(--accent-border);
+  background: var(--bg-elevated);
 }
 
 .item-head {
@@ -382,25 +393,58 @@ body {
   gap: 8px;
 }
 
-.item-badge {
+/* Category badge (issue #76) -- color-coded by badgeVariant() in
+   sidepanel.js: indigo for Jobs, amber for anything deadline-flagged
+   (takes priority over Jobs), neutral gray otherwise. */
+.category-badge {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.category-badge.neutral {
+  background: var(--bg-elevated);
+  color: var(--text-dim);
+  border-color: var(--border);
+}
+
+.category-badge.jobs {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+.category-badge.deadline {
+  background: var(--amber-dim);
+  color: var(--amber);
+  border-color: var(--amber-border);
+}
+
+/* Row-level status-check icon (issue #76): faint outline when unmarked,
+   filled success color once the item's status/applied field is set. */
+.status-check {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-top: 2px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-faint);
+  color: var(--text-faint);
+  opacity: 0.55;
 }
 
-.item-badge.deadline {
-  background: #ff9f45;
-}
-
-.item-badge.book {
-  background: #45c4ff;
-}
-
-.item-badge.study_plan {
-  background: #7c5cff;
+.status-check.done {
+  color: var(--success);
+  opacity: 1;
 }
 
 .item-body {
@@ -422,21 +466,21 @@ body {
 }
 
 .match-pill.high {
-  background: rgba(58, 199, 120, 0.14);
-  color: #3ac778;
-  border: 1px solid rgba(58, 199, 120, 0.35);
+  background: var(--success-dim);
+  color: var(--success);
+  border: 1px solid var(--success-border);
 }
 
 .match-pill.medium {
-  background: rgba(255, 191, 71, 0.14);
-  color: #ffbf47;
-  border: 1px solid rgba(255, 191, 71, 0.35);
+  background: var(--amber-dim);
+  color: var(--amber);
+  border: 1px solid var(--amber-border);
 }
 
 .match-pill.low {
-  background: rgba(255, 107, 107, 0.12);
+  background: var(--danger-dim);
   color: var(--danger);
-  border: 1px solid rgba(255, 107, 107, 0.35);
+  border: 1px solid var(--danger-border);
 }
 
 /* Job-listing freshness pill (posted_at-derived) */
@@ -453,15 +497,15 @@ body {
 }
 
 .freshness-pill.fresh {
-  background: rgba(58, 199, 120, 0.14);
-  color: #3ac778;
-  border: 1px solid rgba(58, 199, 120, 0.35);
+  background: var(--success-dim);
+  color: var(--success);
+  border: 1px solid var(--success-border);
 }
 
 .freshness-pill.stale {
-  background: rgba(255, 107, 107, 0.12);
+  background: var(--danger-dim);
   color: var(--danger);
-  border: 1px solid rgba(255, 107, 107, 0.35);
+  border: 1px solid var(--danger-border);
 }
 
 /* Resurfaced-item pill (resurface_at due) */
@@ -477,7 +521,7 @@ body {
   white-space: nowrap;
   background: var(--accent-dim);
   color: var(--accent);
-  border: 1px solid rgba(124, 92, 255, 0.35);
+  border: 1px solid var(--accent-border);
 }
 
 .item-title {
@@ -514,7 +558,7 @@ body {
   white-space: nowrap;
   background: var(--accent-dim);
   color: var(--accent);
-  border: 1px solid rgba(124, 92, 255, 0.35);
+  border: 1px solid var(--accent-border);
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 11px;
@@ -524,7 +568,7 @@ body {
 }
 
 .link-pill:hover {
-  background: rgba(124, 92, 255, 0.28);
+  background: rgba(59, 79, 204, 0.2);
 }
 
 .item-actions {
@@ -652,11 +696,11 @@ body {
 .action-btn.primary {
   background: var(--accent-dim);
   color: var(--accent);
-  border-color: rgba(124, 92, 255, 0.35);
+  border-color: var(--accent-border);
 }
 
 .action-btn.primary:hover {
-  background: rgba(124, 92, 255, 0.28);
+  background: rgba(59, 79, 204, 0.2);
 }
 
 .action-btn {
@@ -675,13 +719,13 @@ body {
 .action-btn:hover {
   background: var(--accent-dim);
   color: var(--accent);
-  border-color: rgba(124, 92, 255, 0.35);
+  border-color: var(--accent-border);
 }
 
 .action-btn.destructive:hover {
-  background: rgba(255, 107, 107, 0.12);
+  background: var(--danger-dim);
   color: var(--danger);
-  border-color: rgba(255, 107, 107, 0.35);
+  border-color: var(--danger-border);
 }
 
 .action-btn[disabled] {
@@ -789,6 +833,12 @@ body {
   display: none;
 }
 
+/* Already inside the full-tab dashboard -- opening it again would just be a
+   second, redundant tab (issue #76). */
+.dashboard-mode .open-dashboard-btn {
+  display: none;
+}
+
 .dashboard-nav-item {
   appearance: none;
   border: 1px solid transparent;
@@ -815,7 +865,7 @@ body {
 .dashboard-nav-item[aria-selected="true"] {
   background: var(--accent-dim);
   color: var(--accent);
-  border-color: rgba(124, 92, 255, 0.35);
+  border-color: var(--accent-border);
 }
 
 .dashboard-nav-count {
@@ -835,17 +885,143 @@ body {
   left: 50%;
   bottom: 14px;
   transform: translateX(-50%);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  color: var(--text);
+  background: var(--text);
+  border: 1px solid var(--text);
+  color: var(--bg);
   padding: 7px 12px;
   border-radius: var(--radius-sm);
   font-size: 12px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   z-index: 10;
 }
 
 .toast.error {
-  border-color: rgba(255, 107, 107, 0.4);
-  color: var(--danger);
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+/* ============================================================
+   Newspaper token system -- Overview only (issue #76). Scoped
+   entirely under .overview so it never bleeds into the SaaS chrome
+   around it (topbar, tabs, sidebar all stay on the tokens above).
+
+   These are the same font/token choices as the newspaper digest
+   feature (separate issue) -- keep the two in sync rather than
+   letting "newspaper" mean two different things in this codebase.
+   ============================================================ */
+.overview {
+  /* Same hex values as backend/templates/digest.html.jinja2's :root
+     (--cream/--ink/--rule/...) -- prefixed here only to avoid shadowing
+     this file's own --bg/--text/--accent SaaS tokens for the rest of the
+     .overview subtree, not because the palette itself differs. */
+  --np-cream: #f6f1e4;
+  --np-cream-dim: #ece3cd;
+  --np-ink: #1c1a15;
+  --np-ink-dim: #5a5648;
+  --np-ink-faint: #8b8672;
+  --np-rule: #1c1a15;
+  --np-accent: #9c2b22;
+  --np-heading-font: "Playfair Display", Georgia, "Times New Roman", serif;
+  --np-body-font: "Lora", Georgia, "Times New Roman", serif;
+
+  background: var(--np-cream);
+  color: var(--np-ink);
+  font-family: var(--np-body-font);
+}
+
+.overview .empty-title,
+.overview .empty-sub {
+  font-family: var(--np-body-font);
+  color: var(--np-ink);
+}
+
+.overview .empty-sub {
+  color: var(--np-ink-dim);
+}
+
+.overview-heading {
+  margin: 0;
+  font-family: var(--np-heading-font);
+  color: var(--np-ink);
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding-bottom: 7px;
+  border-bottom: 4px double var(--np-rule);
+}
+
+.overview-trend-range {
+  font-family: var(--np-body-font);
+  font-style: italic;
+  color: var(--np-ink-dim);
+}
+
+/* Stat tiles -- bordered boxes, small-caps label above a large serif number
+   ("by the numbers" convention, per the newspaper digest's shared tokens). */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 8px;
+}
+
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--np-rule);
+  padding: 8px 10px 10px;
+}
+
+.stat-tile-value {
+  font-family: var(--np-heading-font);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--np-ink);
+}
+
+.stat-tile-label {
+  font-family: var(--np-body-font);
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  color: var(--np-ink-dim);
+}
+
+/* Category bars -- bordered track, solid ink-black fill, serif labels. */
+.overview .bar-label {
+  font-family: var(--np-body-font);
+  font-style: italic;
+  color: var(--np-ink-dim);
+}
+
+.overview .bar-track {
+  background: transparent;
+  border: 1px solid var(--np-rule);
+  border-radius: 0;
+}
+
+.overview .bar-fill {
+  background: var(--np-ink);
+  border-radius: 0;
+}
+
+.overview .bar-count {
+  font-family: var(--np-heading-font);
+  font-weight: 700;
+  color: var(--np-ink);
+}
+
+.overview .trend-chart {
+  border-bottom: 1px solid var(--np-rule);
+}
+
+.overview .trend-bar {
+  background: rgba(28, 26, 21, 0.18);
+  border-radius: 0;
+}
+
+.overview .trend-bar.has-captures {
+  background: var(--np-ink);
 }
