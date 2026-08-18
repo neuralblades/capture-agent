@@ -217,6 +217,13 @@ class MatchResult(BaseModel):
     )
 
 
+class AppliedCount(BaseModel):
+    """Total opportunity posts marked status='applied', across the whole table (not just one
+    page of GET /posts) -- the numerator for the sidepanel's conversion-rate stat."""
+
+    count: int = Field(..., description="Number of posts with is_opportunity=true and status='applied'")
+
+
 class CategoryCount(BaseModel):
     """A category and how many stored posts currently carry it."""
 

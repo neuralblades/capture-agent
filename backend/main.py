@@ -23,6 +23,7 @@ from contact_extractor import find_contact_email
 from email_generator import generate_cold_email
 from llm_processor import calculate_match_score, extract_post_data, generate_form_answer, map_form_fields
 from models import (
+    AppliedCount,
     CalculateMatchRequest,
     CapturedPost,
     CategoryCount,
@@ -154,6 +155,11 @@ def calculate_match(request: CalculateMatchRequest) -> MatchResult:
 @app.get("/categories", response_model=list[CategoryCount])
 def get_categories() -> list[CategoryCount]:
     return [CategoryCount(**row) for row in database.category_counts()]
+
+
+@app.get("/stats/applied-count", response_model=AppliedCount)
+def get_applied_count() -> AppliedCount:
+    return AppliedCount(count=database.count_applied_opportunities())
 
 
 @app.get("/stats/overview", response_model=StatsOverview)

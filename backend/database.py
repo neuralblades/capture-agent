@@ -200,6 +200,20 @@ def category_counts() -> list[dict[str, Any]]:
     return [{"name": "All", "count": total}] + [{"name": row["name"], "count": row["count"]} for row in rows]
 
 
+def count_applied_opportunities() -> int:
+    """Total posts marked status='applied' among opportunity posts, across the whole table --
+    not just whatever page the sidepanel currently has loaded via GET /posts (limit=50 default).
+    Restricted to is_opportunity=1 to match captures_total (the conversion-rate denominator,
+    tracked client-side in metrics.js), which also only counts opportunity captures; the sidepanel's
+    free-text status field on non-opportunity items could otherwise be set to the literal string
+    "applied" too and would wrongly inflate this count."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM posts WHERE is_opportunity = 1 AND status = 'applied'"
+        ).fetchone()
+    return row["n"]
+
+
 def platform_counts() -> list[dict[str, Any]]:
     """Unique platforms currently present, with post counts, plus an 'All' total.
 

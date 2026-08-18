@@ -282,6 +282,38 @@ def test_update_post_fields_returns_false_when_missing(isolated_db):
     assert database.update_post_fields(999999, status="applied") is False
 
 
+def test_count_applied_opportunities_empty_db_returns_zero(isolated_db):
+    assert database.count_applied_opportunities() == 0
+
+
+def test_count_applied_opportunities_counts_only_applied_opportunities(isolated_db):
+    applied_opportunity = _insert(is_opportunity=True)
+    database.update_post_fields(applied_opportunity, status="applied")
+
+    unapplied_opportunity = _insert(is_opportunity=True)
+    database.update_post_fields(unapplied_opportunity, status="read")
+
+    # Not an opportunity -- must not count even though its free-text status
+    # happens to also be "applied" (e.g. set via the sidepanel's plain status
+    # field on a non-opportunity item).
+    applied_non_opportunity = _insert(is_opportunity=False)
+    database.update_post_fields(applied_non_opportunity, status="applied")
+
+    assert database.count_applied_opportunities() == 1
+
+
+def test_count_applied_opportunities_not_capped_by_list_posts_page_size(isolated_db):
+    # GET /posts defaults to limit=50; this count must reflect the whole
+    # table, not just whatever page happens to be loaded client-side.
+    for _ in range(60):
+        _insert(is_opportunity=True)
+    oldest_id = 1
+    database.update_post_fields(oldest_id, status="applied")
+
+    assert database.count_applied_opportunities() == 1
+    assert oldest_id not in [p["id"] for p in database.list_posts(limit=50)]
+
+
 def test_category_counts_includes_all_total_and_per_category_counts(isolated_db):
     _insert(category="AI Tools")
     _insert(category="AI Tools")

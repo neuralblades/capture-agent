@@ -520,6 +520,28 @@ def test_categories_empty_when_no_posts(client):
     assert resp.json() == [{"name": "All", "count": 0}]
 
 
+def test_applied_count_empty_db_returns_zero(client):
+    resp = client.get("/stats/applied-count")
+    assert resp.status_code == 200
+    assert resp.json() == {"count": 0}
+
+
+def test_applied_count_reflects_whole_table_not_just_one_page(client):
+    with patch("main.extract_post_data", return_value=FAKE_JOB_RESULT):
+        for i in range(55):
+            client.post("/capture", json={"platform": "twitter", "content": f"opportunity {i}"})
+
+    oldest_post_id = client.get("/posts", params={"limit": 1, "offset": 54}).json()[0]["id"]
+    client.patch(f"/posts/{oldest_post_id}", json={"status": "applied"})
+
+    # Default GET /posts page (limit=50) wouldn't include the oldest post.
+    assert oldest_post_id not in [p["id"] for p in client.get("/posts").json()]
+
+    resp = client.get("/stats/applied-count")
+    assert resp.status_code == 200
+    assert resp.json() == {"count": 1}
+
+
 def test_categories_aggregates_across_posts(client):
     ai_result = FAKE_RESULT.model_copy(update={"category": "AI Tools"})
     finance_result = FAKE_RESULT.model_copy(update={"category": "Finance"})

@@ -6,6 +6,7 @@ const BACKEND_CATEGORIES_URL = "http://localhost:8000/categories";
 const BACKEND_GENERATE_EMAIL_URL = "http://localhost:8000/generate-email";
 const BACKEND_CALCULATE_MATCH_URL = "http://localhost:8000/calculate-match";
 const BACKEND_STATS_OVERVIEW_URL = "http://localhost:8000/stats/overview";
+const BACKEND_APPLIED_COUNT_URL = "http://localhost:8000/stats/applied-count";
 // Written by extension/options/options.js and read by extension/content/form_autofill.js.
 const PROFILE_STORAGE_KEY = "profile";
 
@@ -88,6 +89,12 @@ const state = {
   sortByMatch: false,
   categories: [{ name: ALL_CATEGORY, count: 0 }],
   metrics: {},
+  // All-time count of applied opportunities from GET /stats/applied-count,
+  // *not* derived from state.items -- that only ever holds one page of
+  // GET /posts (limit=50 default), which would silently undercount once a
+  // workspace has more than 50 captures. Kept in sync with an optimistic
+  // +/-1 in toggleApplied() plus a refetch on every load/refresh.
+  appliedCount: 0,
   stats: null,
   // Ids of items with their notes/snooze editors expanded, per-render UI
   // state kept here (not on the item) since renderList() rebuilds the DOM
@@ -382,6 +389,23 @@ async function loadCategories() {
   } catch (error) {
     console.error("[CaptureAgent] Failed to load categories", error);
   }
+}
+
+/** Fetches the all-time applied-opportunity count for the conversion-rate stat -- a dedicated
+ * backend aggregate rather than something derived from state.items, since that only ever holds
+ * one page of GET /posts (see the state.appliedCount comment). */
+async function loadAppliedCount() {
+  try {
+    const response = await fetch(BACKEND_APPLIED_COUNT_URL);
+    if (!response.ok) {
+      throw new Error(`Failed to load applied count (${response.status})`);
+    }
+    const { count } = await response.json();
+    state.appliedCount = count;
+  } catch (error) {
+    console.error("[CaptureAgent] Failed to load applied count", error);
+  }
+  renderStats();
 }
 
 /** Fetches the read-only stats aggregation (platform/category/trend) for the
@@ -880,9 +904,14 @@ function renderList() {
       }
       dateInput.addEventListener("change", () => {
         if (!dateInput.value) return;
+        // Parsed/formatted as UTC midnight on both the save side here and the
+        // display side above (toISOString() is always UTC) so the round trip
+        // is timezone-independent -- anchoring to local midnight instead
+        // would shift the displayed date by a day when re-opened in a
+        // timezone east of UTC.
         updatePost(
           item,
-          { resurface_at: new Date(`${dateInput.value}T00:00:00`).toISOString() },
+          { resurface_at: new Date(`${dateInput.value}T00:00:00Z`).toISOString() },
           "Snoozed"
         );
       });
@@ -959,9 +988,16 @@ async function updatePost(item, fields, successMessage) {
  * /posts/{id} (see issue #66) rather than client-side-only chrome.storage.local tracking. */
 async function toggleApplied(item, checkboxEl) {
   checkboxEl.disabled = true;
+  const wasApplied = item.status === "applied";
   try {
     const updated = await patchPost(item.postId, { status: checkboxEl.checked ? "applied" : null });
     item.status = updated.status;
+    const isApplied = item.status === "applied";
+    // A no-op toggle (e.g. re-rendering the same checked checkbox) must not
+    // move the count -- mirrors the old setItemApplied()'s no-op guard.
+    if (isApplied !== wasApplied) {
+      state.appliedCount += isApplied ? 1 : -1;
+    }
     renderStats();
     showToast(checkboxEl.checked ? "Marked as applied" : "Unmarked as applied");
   } catch (error) {
@@ -1053,6 +1089,7 @@ async function runAction(item, action, triggerEl) {
     state.items = state.items.filter((i) => i.id !== item.id);
     render();
     loadCategories();
+    loadAppliedCount();
   }
   showToast(response.ok ? "Done" : "Action failed", !response.ok);
 }
@@ -1068,15 +1105,8 @@ function showToast(message, isError) {
   }, 2200);
 }
 
-/** Derived from currently loaded items rather than a persisted counter (see
- * metrics.js's file header for why), so it survives chrome.storage.local
- * being cleared and stays in sync with the backend across devices. */
-function countApplied() {
-  return state.items.filter((item) => item.status === "applied").length;
-}
-
 function renderStats() {
-  const metrics = { ...state.metrics, [MetricName.APPLICATIONS_SUBMITTED]: countApplied() };
+  const metrics = { ...state.metrics, [MetricName.APPLICATIONS_SUBMITTED]: state.appliedCount };
   els.statCaptures.textContent = String(metrics[MetricName.CAPTURES_TOTAL] || 0);
   els.statRate.textContent = `${Math.round(conversionRate(metrics))}%`;
 }
@@ -1112,6 +1142,7 @@ if (hasExtensionRuntime && chrome.runtime.onMessage) {
     if (message?.type === MessageType.REFRESH_POSTS) {
       refreshMetrics().then(loadPosts);
       loadCategories();
+      loadAppliedCount();
       if (state.view === VIEW_OVERVIEW) loadStats();
     }
     // Sent by context_menu.js's three "Capture this page" triggers (right-click
@@ -1147,6 +1178,7 @@ async function boot() {
   }
   await loadPosts();
   loadCategories();
+  loadAppliedCount();
 }
 
 if (document.readyState === "loading") {
