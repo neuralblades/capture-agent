@@ -7,6 +7,7 @@ const BACKEND_GENERATE_EMAIL_URL = "http://localhost:8000/generate-email";
 const BACKEND_CALCULATE_MATCH_URL = "http://localhost:8000/calculate-match";
 const BACKEND_STATS_OVERVIEW_URL = "http://localhost:8000/stats/overview";
 const BACKEND_APPLIED_COUNT_URL = "http://localhost:8000/stats/applied-count";
+const BACKEND_DIGEST_URL = "http://localhost:8000/digest";
 // Written by extension/options/options.js and read by extension/content/form_autofill.js.
 const PROFILE_STORAGE_KEY = "profile";
 
@@ -150,6 +151,7 @@ const els = {
   search: document.getElementById("search-input"),
   toast: document.getElementById("toast"),
   sortMatchBtn: document.getElementById("sort-match-btn"),
+  digestBtn: document.getElementById("digest-btn"),
   statCaptures: document.getElementById("stat-captures"),
   statRate: document.getElementById("stat-rate"),
   viewTabList: document.getElementById("view-tab-list"),
@@ -1298,6 +1300,17 @@ els.sortMatchBtn.addEventListener("click", () => {
   state.sortByMatch = !state.sortByMatch;
   els.sortMatchBtn.setAttribute("aria-pressed", String(state.sortByMatch));
   renderList();
+});
+
+/** Opens the ranked HTML digest (backend/digest.py) in a new tab -- the extension
+ * itself does no rendering, it's just the trigger per issue #73's v1 scope
+ * (manual generation only, no schedule). */
+els.digestBtn.addEventListener("click", () => {
+  if (hasExtensionRuntime && chrome.tabs?.create) {
+    chrome.tabs.create({ url: BACKEND_DIGEST_URL });
+  } else {
+    window.open(BACKEND_DIGEST_URL, "_blank", "noopener");
+  }
 });
 
 let searchDebounce = null;

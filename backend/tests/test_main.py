@@ -735,6 +735,42 @@ def test_delete_missing_feed_returns_404(client):
     assert resp.status_code == 404
 
 
+def test_get_digest_html_renders_captured_posts(client):
+    with patch("main.extract_post_data", return_value=FAKE_JOB_RESULT):
+        client.post("/capture", json={"platform": "twitter", "content": "We're hiring!"})
+
+    resp = client.get("/digest")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert FAKE_JOB_RESULT.summary in resp.text
+
+
+def test_get_digest_html_handles_no_posts(client):
+    resp = client.get("/digest")
+    assert resp.status_code == 200
+    assert "Nothing captured yet" in resp.text
+
+
+def test_get_digest_pdf_returns_pdf_bytes_when_weasyprint_available(client):
+    with patch("main.extract_post_data", return_value=FAKE_JOB_RESULT):
+        client.post("/capture", json={"platform": "twitter", "content": "We're hiring!"})
+
+    with patch("main.digest.render_digest_pdf", return_value=b"%PDF-fake-bytes"):
+        resp = client.get("/digest.pdf")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content == b"%PDF-fake-bytes"
+
+
+def test_get_digest_pdf_returns_501_when_weasyprint_unavailable(client):
+    with patch("main.digest.render_digest_pdf", side_effect=OSError("cannot load library 'libgobject-2.0-0'")):
+        resp = client.get("/digest.pdf")
+
+    assert resp.status_code == 501
+    assert "WeasyPrint" in resp.json()["detail"]
+
+
 def test_list_feeds_empty_when_none_added(client):
     resp = client.get("/feeds")
     assert resp.status_code == 200

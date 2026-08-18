@@ -14,10 +14,12 @@ from datetime import datetime, timezone
 from typing import Literal
 
 import feedparser
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 import database
+import digest
 import feed_poller
 from contact_extractor import find_contact_email
 from email_generator import generate_cold_email
@@ -265,3 +267,39 @@ def create_feed(feed: FeedCreate) -> FeedRecord:
 def delete_feed(feed_id: int) -> None:
     if not database.delete_feed(feed_id):
         raise HTTPException(status_code=404, detail="Feed not found")
+
+
+# Manually triggered only (issue #73) -- no scheduler wired up for v1.
+@app.get("/digest", response_class=HTMLResponse)
+def get_digest_html(
+    limit: int = Query(100, ge=1, le=500, description="How many recent posts to pull from and rank for this edition"),
+    n: int = Query(digest.DEFAULT_FRONT_PAGE_SIZE, ge=1, le=20, description="Number of top-ranked items on the front page"),
+) -> HTMLResponse:
+    posts = database.list_posts(limit=limit, offset=0)
+    return HTMLResponse(content=digest.render_digest_html(posts, front_page_size=n))
+
+
+@app.get("/digest.pdf")
+def get_digest_pdf(
+    limit: int = Query(100, ge=1, le=500, description="How many recent posts to pull from and rank for this edition"),
+    n: int = Query(digest.DEFAULT_FRONT_PAGE_SIZE, ge=1, le=20, description="Number of top-ranked items on the front page"),
+) -> Response:
+    posts = database.list_posts(limit=limit, offset=0)
+    html = digest.render_digest_html(posts, front_page_size=n)
+    try:
+        pdf_bytes = digest.render_digest_pdf(html)
+    except (ImportError, OSError) as exc:
+        # ImportError: the weasyprint package itself isn't installed.
+        # OSError: weasyprint is installed but its native deps (Pango,
+        # cairo, GDK-Pixbuf, GObject) aren't on this machine -- that's how
+        # it actually fails, e.g. on a plain Windows install (see
+        # https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#installation).
+        raise HTTPException(
+            status_code=501,
+            detail="PDF export requires WeasyPrint and its native dependencies (Pango, cairo, GDK-Pixbuf) to be installed",
+        ) from exc
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=capture-agent-digest.pdf"},
+    )
