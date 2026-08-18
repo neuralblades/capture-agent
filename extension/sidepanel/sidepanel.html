@@ -3,10 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <title>Capture Agent</title>
+    <script>
+      // Applied synchronously (before CSS/first paint) so opening this page as a
+      // full-tab dashboard (?mode=dashboard) doesn't flash the docked layout first.
+      if (new URLSearchParams(location.search).get("mode") === "dashboard") {
+        document.documentElement.classList.add("dashboard-mode");
+      }
+    </script>
     <link rel="stylesheet" href="sidepanel.css" />
   </head>
   <body>
-    <div class="app">
+    <div class="dashboard-shell">
+      <nav id="dashboard-sidebar" class="dashboard-sidebar" role="tablist" aria-label="Dashboard sections"></nav>
+      <div class="app">
       <header class="topbar">
         <div class="search-wrap">
           <svg class="search-icon" viewBox="0 0 20 20" width="14" height="14" aria-hidden="true">
@@ -91,6 +100,7 @@
           </div>
         </div>
       </section>
+      </div>
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="assertive" hidden></div>
