@@ -325,6 +325,72 @@ def test_count_applied_opportunities_not_capped_by_list_posts_page_size(isolated
     assert oldest_id not in [p["id"] for p in database.list_posts(limit=50)]
 
 
+def test_window_range_today_and_yesterday_are_single_day(isolated_db):
+    today = datetime.now(timezone.utc).date()
+    assert database.window_range("today") == (today, today)
+    assert database.window_range("yesterday") == (today - timedelta(days=1), today - timedelta(days=1))
+
+
+def test_window_range_last_week_is_trailing_seven_days(isolated_db):
+    today = datetime.now(timezone.utc).date()
+    assert database.window_range("last_week") == (today - timedelta(days=6), today)
+
+
+def test_count_opportunities_empty_db_returns_zero(isolated_db):
+    assert database.count_opportunities() == 0
+
+
+def test_count_opportunities_counts_only_opportunities(isolated_db):
+    _insert(is_opportunity=True)
+    _insert(is_opportunity=True)
+    _insert(is_opportunity=False)
+
+    assert database.count_opportunities() == 2
+
+
+def test_count_opportunities_in_window_scopes_by_captured_at(isolated_db):
+    now = datetime.now(timezone.utc)
+    _insert(is_opportunity=True, captured_at=now.isoformat())
+    _insert(is_opportunity=True, captured_at=(now - timedelta(days=1)).isoformat())
+    _insert(is_opportunity=True, captured_at=(now - timedelta(days=10)).isoformat())
+    # Not an opportunity -- must not count even though it's within every window below.
+    _insert(is_opportunity=False, captured_at=now.isoformat())
+
+    assert database.count_opportunities_in_window("today") == 1
+    assert database.count_opportunities_in_window("yesterday") == 1
+    assert database.count_opportunities_in_window("last_week") == 2
+
+
+def test_count_applied_opportunities_in_window_requires_both_applied_and_in_window(isolated_db):
+    now = datetime.now(timezone.utc)
+    applied_today = _insert(is_opportunity=True, captured_at=now.isoformat())
+    database.update_post_fields(applied_today, status="applied")
+
+    # Captured today but not applied -- must not count.
+    _insert(is_opportunity=True, captured_at=now.isoformat())
+
+    # Applied, but captured outside the window -- must not count for "today".
+    applied_last_week = _insert(is_opportunity=True, captured_at=(now - timedelta(days=5)).isoformat())
+    database.update_post_fields(applied_last_week, status="applied")
+
+    assert database.count_applied_opportunities_in_window("today") == 1
+    assert database.count_applied_opportunities_in_window("last_week") == 2
+
+
+def test_list_posts_with_window_filters_and_pages_results(isolated_db):
+    now = datetime.now(timezone.utc)
+    in_window_ids = [_insert(captured_at=now.isoformat()) for _ in range(3)]
+    _insert(captured_at=(now - timedelta(days=10)).isoformat())
+
+    results = database.list_posts(limit=50, offset=0, window="today")
+    assert sorted(p["id"] for p in results) == sorted(in_window_ids)
+
+    paged = database.list_posts(limit=2, offset=0, window="today")
+    assert len(paged) == 2
+    remaining = database.list_posts(limit=2, offset=2, window="today")
+    assert len(remaining) == 1
+
+
 def test_category_counts_includes_all_total_and_per_category_counts(isolated_db):
     _insert(category="AI Tools")
     _insert(category="AI Tools")

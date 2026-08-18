@@ -4,12 +4,6 @@
     <meta charset="UTF-8" />
     <title>Capture Agent</title>
     <script src="dashboard-mode-init.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="sidepanel.css" />
   </head>
   <body>
@@ -66,17 +60,6 @@
         </button>
       </header>
 
-      <section id="funnel-stats" class="funnel-stats" aria-label="Capture funnel stats">
-        <div class="stat">
-          <span id="stat-captures" class="stat-value">0</span>
-          <span class="stat-label">Total Jobs Captured</span>
-        </div>
-        <div class="stat">
-          <span id="stat-rate" class="stat-value">0%</span>
-          <span class="stat-label">Conversion Rate</span>
-        </div>
-      </section>
-
       <nav id="view-tabs" class="view-tabs" role="tablist" aria-label="View">
         <button id="view-tab-list" type="button" class="view-tab" role="tab" aria-selected="true">List</button>
         <button id="view-tab-overview" type="button" class="view-tab" role="tab" aria-selected="false">Overview</button>
@@ -85,6 +68,8 @@
       <nav id="platform-tabs" class="tabs" role="tablist" aria-label="Capture platforms"></nav>
 
       <nav id="tabs" class="tabs" role="tablist" aria-label="Capture categories"></nav>
+
+      <nav id="list-window-filter" class="tabs" role="tablist" aria-label="Capture time filter"></nav>
 
       <main id="list" class="list" role="tabpanel" aria-live="polite"></main>
 
@@ -101,16 +86,33 @@
           <p class="empty-sub">Stats will show up here once you capture something.</p>
         </div>
         <div id="overview-content" hidden>
+          <div class="overview-block">
+            <div class="overview-heading-row">
+              <h3 class="overview-heading">Funnel</h3>
+              <nav id="overview-window-filter" class="window-filter" role="tablist" aria-label="Funnel stats time window"></nav>
+            </div>
+            <section id="overview-funnel-stats" class="funnel-stats" aria-label="Capture funnel stats, time-scoped">
+              <div class="stat">
+                <span id="overview-stat-captures" class="stat-value">0</span>
+                <span class="stat-label">Jobs Captured</span>
+              </div>
+              <div class="stat">
+                <span id="overview-stat-rate" class="stat-value">0%</span>
+                <span class="stat-label">Conversion Rate</span>
+              </div>
+            </section>
+          </div>
+
           <div id="overview-stats" class="stats-grid" aria-label="Capture totals, by the numbers"></div>
 
           <div class="overview-block">
             <h3 class="overview-heading">By Platform</h3>
-            <div id="overview-platform-bars" class="bar-list"></div>
+            <div id="overview-platform-bars" class="overview-group-grid"></div>
           </div>
 
           <div class="overview-block">
             <h3 class="overview-heading">By Category</h3>
-            <div id="overview-category-bars" class="bar-list"></div>
+            <div id="overview-category-bars" class="overview-group-grid"></div>
           </div>
 
           <div class="overview-block">

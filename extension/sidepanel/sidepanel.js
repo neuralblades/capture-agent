@@ -7,6 +7,7 @@ const BACKEND_GENERATE_EMAIL_URL = "http://localhost:8000/generate-email";
 const BACKEND_CALCULATE_MATCH_URL = "http://localhost:8000/calculate-match";
 const BACKEND_STATS_OVERVIEW_URL = "http://localhost:8000/stats/overview";
 const BACKEND_APPLIED_COUNT_URL = "http://localhost:8000/stats/applied-count";
+const BACKEND_CAPTURES_COUNT_URL = "http://localhost:8000/stats/captures-count";
 const BACKEND_DIGEST_URL = "http://localhost:8000/digest";
 // Written by extension/options/options.js and read by extension/content/form_autofill.js.
 const PROFILE_STORAGE_KEY = "profile";
@@ -16,6 +17,17 @@ const ALL_PLATFORM = "All";
 
 const VIEW_LIST = "list";
 const VIEW_OVERVIEW = "overview";
+
+/** Trailing-window options backing GET /posts, /stats/applied-count, /stats/captures-count
+ * (see backend/database.py's StatsWindow) -- shared between the Overview funnel stats time
+ * window and the independent Inbox list time filter (issue #80). `id: null` (Inbox only)
+ * means "no window filter", the backend param is omitted entirely in that case. */
+const OVERVIEW_WINDOWS = [
+  { id: "today", label: "Today" },
+  { id: "yesterday", label: "Yesterday" },
+  { id: "last_week", label: "Last week" },
+];
+const LIST_WINDOWS = [{ id: null, label: "All" }, ...OVERVIEW_WINDOWS];
 
 /** Page size for `GET /posts?limit=&offset=`, both for the initial load and each "Load More". */
 const POSTS_PAGE_SIZE = 50;
@@ -123,6 +135,16 @@ const state = {
   // +/-1 in toggleApplied() plus a refetch on every load/refresh.
   appliedCount: 0,
   stats: null,
+  // Time window for the Overview funnel stats block (issue #80) -- always one of
+  // OVERVIEW_WINDOWS, never "all time" (see loadFunnelStats()).
+  overviewWindow: OVERVIEW_WINDOWS[0].id,
+  // { captures, applied } from the latest loadFunnelStats() call, or null before the
+  // first load / on fetch failure.
+  funnelStats: null,
+  // Independent time filter for the Inbox list (issue #80) -- null means unfiltered
+  // ("All"). Distinct from overviewWindow: this narrows which posts GET /posts returns,
+  // rather than scoping a stat.
+  inboxWindow: LIST_WINDOWS[0].id,
   // Ids of items with their notes/snooze editors expanded, per-render UI
   // state kept here (not on the item) since renderList() rebuilds the DOM
   // from scratch on every call and would otherwise forget it was open.
@@ -144,6 +166,7 @@ const state = {
 const els = {
   tabs: document.getElementById("tabs"),
   platformTabs: document.getElementById("platform-tabs"),
+  listWindowFilter: document.getElementById("list-window-filter"),
   dashboardSidebar: document.getElementById("dashboard-sidebar"),
   list: document.getElementById("list"),
   loadMoreBtn: document.getElementById("load-more-btn"),
@@ -152,13 +175,14 @@ const els = {
   toast: document.getElementById("toast"),
   sortMatchBtn: document.getElementById("sort-match-btn"),
   digestBtn: document.getElementById("digest-btn"),
-  statCaptures: document.getElementById("stat-captures"),
-  statRate: document.getElementById("stat-rate"),
   viewTabList: document.getElementById("view-tab-list"),
   viewTabOverview: document.getElementById("view-tab-overview"),
   overviewView: document.getElementById("overview-view"),
   overviewEmpty: document.getElementById("overview-empty"),
   overviewContent: document.getElementById("overview-content"),
+  overviewWindowFilter: document.getElementById("overview-window-filter"),
+  overviewStatCaptures: document.getElementById("overview-stat-captures"),
+  overviewStatRate: document.getElementById("overview-stat-rate"),
   overviewStats: document.getElementById("overview-stats"),
   overviewPlatformBars: document.getElementById("overview-platform-bars"),
   overviewCategoryBars: document.getElementById("overview-category-bars"),
@@ -363,10 +387,12 @@ async function refreshMetrics() {
   state.metrics = await getMetrics();
 }
 
-/** Fetches one page of `GET /posts`, newest-first. Returns `[]` on a non-array body. */
-async function fetchPostsPage(offset, limit) {
-  const url = `${BACKEND_POSTS_URL}?limit=${limit}&offset=${offset}`;
-  const response = await fetch(url);
+/** Fetches one page of `GET /posts`, newest-first, optionally scoped to `state.inboxWindow`.
+ * Returns `[]` on a non-array body. */
+async function fetchPostsPage(offset, limit, window) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (window) params.set("window", window);
+  const response = await fetch(`${BACKEND_POSTS_URL}?${params}`);
   if (!response.ok) {
     throw new Error(`Failed to load posts (${response.status})`);
   }
@@ -376,7 +402,7 @@ async function fetchPostsPage(offset, limit) {
 
 async function loadPosts() {
   try {
-    const posts = await fetchPostsPage(0, POSTS_PAGE_SIZE);
+    const posts = await fetchPostsPage(0, POSTS_PAGE_SIZE, state.inboxWindow);
     state.items = posts.map(mapPostToItem);
     state.offset = posts.length;
     state.hasMore = posts.length === POSTS_PAGE_SIZE;
@@ -390,6 +416,15 @@ async function loadPosts() {
   }
 }
 
+/** Switches the Inbox list's independent time filter (issue #80) -- distinct from the
+ * Overview funnel stats window, this narrows which posts GET /posts returns rather than
+ * scoping a stat. Refetches from offset 0 under the new window. */
+function setInboxWindow(window) {
+  if (state.inboxWindow === window) return;
+  state.inboxWindow = window;
+  loadPosts();
+}
+
 /** "Load More": fetches the next page at `state.offset` and appends it. Items already
  * present (by id) are dropped rather than duplicated -- a live capture arriving between
  * pages shifts every backend offset down by one, which would otherwise re-fetch the
@@ -399,7 +434,7 @@ async function loadMorePosts() {
   state.loadingMore = true;
   renderLoadMoreButton();
   try {
-    const posts = await fetchPostsPage(state.offset, POSTS_PAGE_SIZE);
+    const posts = await fetchPostsPage(state.offset, POSTS_PAGE_SIZE, state.inboxWindow);
     const newItems = posts.map(mapPostToItem);
     const existingIds = new Set(state.items.map((item) => item.id));
     const appended = newItems.filter((item) => !existingIds.has(item.id));
@@ -423,7 +458,7 @@ async function loadMorePosts() {
  * the user has already fetched, and reset their scroll position back to the top. */
 async function refreshTopPosts() {
   try {
-    const posts = await fetchPostsPage(0, POSTS_PAGE_SIZE);
+    const posts = await fetchPostsPage(0, POSTS_PAGE_SIZE, state.inboxWindow);
     const freshItems = posts.map(mapPostToItem);
 
     const existingIds = new Set(state.items.map((item) => item.id));
@@ -506,7 +541,6 @@ async function loadAppliedCount() {
   } catch (error) {
     console.error("[CaptureAgent] Failed to load applied count", error);
   }
-  renderStats();
 }
 
 /** Fetches the read-only stats aggregation (platform/category/trend) for the
@@ -528,43 +562,57 @@ async function loadStats() {
   renderOverview();
 }
 
-/** Renders one row per {name, count} entry (skipping the "All" total row,
- * which is surfaced separately in the stat tiles) as a bar scaled relative
- * to the largest count in the list.
+/** Renders one collapsed container (title + count only, no expanded bar) per {name, count}
+ * entry -- skipping the "All" total row, which is surfaced separately in the stat tiles.
+ * Replaces the old one-bar-per-category list (issue #80), which didn't scale past a
+ * handful of categories. Clicking a container filters the Inbox list down to it rather
+ * than expanding inline, reusing the existing category/platform filter state instead of
+ * introducing separate per-tile expand/collapse UI state.
  * @param {HTMLElement} container
  * @param {{name: string, count: number}[]} rows
- * @param {(name: string) => string} [labelFn]
+ * @param {(name: string) => string} labelFn
+ * @param {(name: string) => void} onSelect
  */
-function renderBarList(container, rows, labelFn = (name) => name) {
+function renderOverviewGroupGrid(container, rows, labelFn, onSelect) {
   container.innerHTML = "";
   const entries = rows.filter((row) => row.name !== "All");
-  const max = Math.max(1, ...entries.map((row) => row.count));
 
   for (const { name, count } of entries) {
-    const row = document.createElement("div");
-    row.className = "bar-row";
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "overview-group-tile";
+    tile.title = `Show ${labelFn(name)} in the Inbox list`;
 
     const label = document.createElement("span");
-    label.className = "bar-label";
+    label.className = "overview-group-name";
     label.textContent = labelFn(name);
-    label.title = labelFn(name);
-
-    const track = document.createElement("div");
-    track.className = "bar-track";
-    const fill = document.createElement("div");
-    fill.className = "bar-fill";
-    fill.style.width = `${(count / max) * 100}%`;
-    track.appendChild(fill);
 
     const countEl = document.createElement("span");
-    countEl.className = "bar-count";
+    countEl.className = "overview-group-count";
     countEl.textContent = String(count);
 
-    row.appendChild(label);
-    row.appendChild(track);
-    row.appendChild(countEl);
-    container.appendChild(row);
+    tile.appendChild(label);
+    tile.appendChild(countEl);
+    tile.addEventListener("click", () => onSelect(name));
+    container.appendChild(tile);
   }
+}
+
+/** Switches to the Inbox list view filtered to a single category/platform -- the click
+ * target for an Overview breakdown tile (see renderOverviewGroupGrid()). In dashboard mode
+ * this also has to leave the Overview sidebar section, since category/platform filters
+ * only apply within the Inbox/RSS/GitHub/Jobs sections' list view.
+ * @param {{category?: string, platform?: string}} filter
+ */
+function showFilteredInbox(filter) {
+  if (state.dashboardMode) {
+    switchDashboardSection("inbox");
+  } else {
+    switchView(VIEW_LIST);
+  }
+  if (filter.category !== undefined) state.activeTab = filter.category;
+  if (filter.platform !== undefined) state.activePlatform = filter.platform;
+  render();
 }
 
 /** Renders the day/week-bucketed trend as a row of height-scaled bars, one
@@ -620,12 +668,83 @@ function renderOverview() {
     { label: "Categories", value: stats.category_counts.filter((c) => c.name !== "All").length },
     { label: "Platforms", value: stats.platform_counts.filter((p) => p.name !== "All").length },
   ]);
-  renderBarList(els.overviewPlatformBars, stats.platform_counts, platformLabel);
-  renderBarList(els.overviewCategoryBars, stats.category_counts);
+  renderOverviewGroupGrid(els.overviewPlatformBars, stats.platform_counts, platformLabel, (platform) =>
+    showFilteredInbox({ platform })
+  );
+  renderOverviewGroupGrid(els.overviewCategoryBars, stats.category_counts, (name) => name, (category) =>
+    showFilteredInbox({ category })
+  );
   renderTrendChart(els.overviewTrend, stats.trend);
 
   if (stats.trend.length > 0) {
     els.overviewTrendRange.textContent = `${stats.trend[0].bucket} – ${stats.trend[stats.trend.length - 1].bucket}`;
+  }
+}
+
+function renderOverviewWindowFilter() {
+  els.overviewWindowFilter.innerHTML = "";
+  for (const { id, label } of OVERVIEW_WINDOWS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tab";
+    btn.role = "tab";
+    btn.setAttribute("aria-selected", String(id === state.overviewWindow));
+    btn.textContent = label;
+    btn.addEventListener("click", () => {
+      if (state.overviewWindow === id) return;
+      state.overviewWindow = id;
+      loadFunnelStats();
+    });
+    els.overviewWindowFilter.appendChild(btn);
+  }
+}
+
+function renderFunnelStats() {
+  const { captures, applied } = state.funnelStats || { captures: 0, applied: 0 };
+  els.overviewStatCaptures.textContent = String(captures);
+  const rate = conversionRate({
+    [MetricName.CAPTURES_TOTAL]: captures,
+    [MetricName.APPLICATIONS_SUBMITTED]: applied,
+  });
+  els.overviewStatRate.textContent = `${Math.round(rate)}%`;
+}
+
+/** Fetches the Overview funnel stats (opportunity captures + conversion rate) scoped to
+ * `state.overviewWindow` -- a separate data source from `state.stats` (the platform/category/
+ * trend breakdown), since it's backed by two dedicated windowed count endpoints rather than
+ * /stats/overview. Always time-scoped, unlike the "by the numbers" stat tiles (issue #80). */
+async function loadFunnelStats() {
+  renderOverviewWindowFilter();
+  try {
+    const [capturesRes, appliedRes] = await Promise.all([
+      fetch(`${BACKEND_CAPTURES_COUNT_URL}?window=${state.overviewWindow}`),
+      fetch(`${BACKEND_APPLIED_COUNT_URL}?window=${state.overviewWindow}`),
+    ]);
+    if (!capturesRes.ok || !appliedRes.ok) {
+      throw new Error("Failed to load funnel stats");
+    }
+    const { count: captures } = await capturesRes.json();
+    const { count: applied } = await appliedRes.json();
+    state.funnelStats = { captures, applied };
+  } catch (error) {
+    console.error("[CaptureAgent] Failed to load funnel stats", error);
+    state.funnelStats = null;
+    showToast("Couldn't load funnel stats", true);
+  }
+  renderFunnelStats();
+}
+
+function renderListWindowFilter() {
+  els.listWindowFilter.innerHTML = "";
+  for (const { id, label } of LIST_WINDOWS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tab";
+    btn.role = "tab";
+    btn.setAttribute("aria-selected", String(id === state.inboxWindow));
+    btn.textContent = label;
+    btn.addEventListener("click", () => setInboxWindow(id));
+    els.listWindowFilter.appendChild(btn);
   }
 }
 
@@ -641,6 +760,7 @@ function switchView(view) {
 
   els.platformTabs.hidden = !showList;
   els.tabs.hidden = !showList;
+  els.listWindowFilter.hidden = !showList;
   els.list.hidden = !showList;
   els.overviewView.hidden = showList;
   if (showList) {
@@ -648,6 +768,7 @@ function switchView(view) {
   } else {
     els.emptyState.hidden = true;
     loadStats();
+    loadFunnelStats();
   }
   renderLoadMoreButton();
 }
@@ -1230,7 +1351,6 @@ async function toggleApplied(item, checkboxEl) {
     if (isApplied !== wasApplied) {
       state.appliedCount += isApplied ? 1 : -1;
     }
-    renderStats();
     showToast(checkboxEl.checked ? "Marked as applied" : "Unmarked as applied");
   } catch (error) {
     console.error("[CaptureAgent] Failed to update applied status", error);
@@ -1269,7 +1389,6 @@ async function draftEmail(item, triggerEl) {
     }
     showToast("Draft ready in Gmail");
     state.metrics = await incrementMetric(MetricName.EMAILS_DRAFTED);
-    renderStats();
   } catch (error) {
     console.error("[CaptureAgent] Draft email failed", error);
     showToast("Couldn't draft email", true);
@@ -1293,7 +1412,6 @@ async function runAction(item, action, triggerEl) {
     }
     if (action === ActionType.APPLY_FORM) {
       state.metrics = await incrementMetric(MetricName.FORMS_OPENED);
-      renderStats();
     }
     return;
   }
@@ -1337,16 +1455,10 @@ function showToast(message, isError) {
   }, 2200);
 }
 
-function renderStats() {
-  const metrics = { ...state.metrics, [MetricName.APPLICATIONS_SUBMITTED]: state.appliedCount };
-  els.statCaptures.textContent = String(metrics[MetricName.CAPTURES_TOTAL] || 0);
-  els.statRate.textContent = `${Math.round(conversionRate(metrics))}%`;
-}
-
 function render() {
-  renderStats();
   renderPlatformTabs();
   renderTabs();
+  renderListWindowFilter();
   renderList();
   renderLoadMoreButton();
   renderDashboardSidebar();
@@ -1404,7 +1516,10 @@ if (hasExtensionRuntime && chrome.runtime.onMessage) {
       refreshMetrics().then(refreshTopPosts);
       loadCategories();
       loadAppliedCount();
-      if (state.view === VIEW_OVERVIEW) loadStats();
+      if (state.view === VIEW_OVERVIEW) {
+        loadStats();
+        loadFunnelStats();
+      }
     }
     // Sent by context_menu.js's three "Capture this page" triggers (right-click
     // page/icon, keyboard shortcut) -- shows the same message here as a toast

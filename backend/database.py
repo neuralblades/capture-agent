@@ -166,13 +166,55 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def list_posts(limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+StatsWindow = Literal["today", "yesterday", "last_week"]
+
+
+def window_range(window: StatsWindow) -> tuple[date, date]:
+    """Inclusive UTC calendar-day bounds for a named trailing window, keyed off
+    `datetime.now(timezone.utc)` the same way trend_counts() anchors its own
+    trailing window -- so "today"/"yesterday"/"last_week" line up with what the
+    trend chart would show for the equivalent range.
+
+    "last_week" is a trailing 7-day window (today and the 6 days before it),
+    matching trend_counts(days=7)'s semantics, not the ISO calendar week.
+    """
+    today = datetime.now(timezone.utc).date()
+    if window == "today":
+        return today, today
+    if window == "yesterday":
+        yesterday = today - timedelta(days=1)
+        return yesterday, yesterday
+    if window == "last_week":
+        return today - timedelta(days=6), today
+    raise ValueError(f"Unknown window: {window!r}")
+
+
+def _captured_at_in_window(captured_at: str, start: date, end: date) -> bool:
+    parsed = _parse_captured_at(captured_at)
+    if parsed is None:
+        return False
+    return start <= parsed.astimezone(timezone.utc).date() <= end
+
+
+def list_posts(limit: int = 50, offset: int = 0, window: Optional[StatsWindow] = None) -> list[dict[str, Any]]:
+    if window is None:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM posts ORDER BY id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        return [row_to_dict(row) for row in rows]
+
+    # Windowed listing can't push LIMIT/OFFSET down into SQL the way the
+    # unwindowed path above does, since captured_at has to be parsed in
+    # Python to compare UTC calendar days (see _parse_captured_at) -- so the
+    # whole table is fetched and filtered before paging. Same tradeoff
+    # trend_counts() already makes for the same reason.
+    start, end = window_range(window)
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM posts ORDER BY id DESC LIMIT ? OFFSET ?",
-            (limit, offset),
-        ).fetchall()
-    return [row_to_dict(row) for row in rows]
+        rows = conn.execute("SELECT * FROM posts ORDER BY id DESC").fetchall()
+    filtered = [row for row in rows if _captured_at_in_window(row["captured_at"], start, end)]
+    return [row_to_dict(row) for row in filtered[offset : offset + limit]]
 
 
 def get_post(post_id: int) -> Optional[dict[str, Any]]:
@@ -217,6 +259,40 @@ def count_applied_opportunities() -> int:
             "SELECT COUNT(*) AS n FROM posts WHERE is_opportunity = 1 AND status = 'applied'"
         ).fetchone()
     return row["n"]
+
+
+def count_opportunities() -> int:
+    """All-time count of opportunity posts (is_opportunity=1), regardless of status --
+    the all-time denominator for the sidepanel's conversion-rate stat."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT COUNT(*) AS n FROM posts WHERE is_opportunity = 1").fetchone()
+    return row["n"]
+
+
+def _count_matching_in_window(where_sql: str, window: StatsWindow) -> int:
+    """Counts posts matching `where_sql` whose captured_at falls within `window`. Filtering
+    happens in Python rather than SQL for the same reason as trend_counts()/list_posts(): a
+    SQL string/date comparison against captured_at's stored ISO 8601 offset could mis-bucket
+    values near a UTC day boundary."""
+    start, end = window_range(window)
+    with get_connection() as conn:
+        rows = conn.execute(f"SELECT captured_at FROM posts WHERE {where_sql}").fetchall()
+    return sum(1 for row in rows if _captured_at_in_window(row["captured_at"], start, end))
+
+
+def count_opportunities_in_window(window: StatsWindow) -> int:
+    """Opportunity posts captured within `window` -- the time-scoped numerator behind the
+    Overview funnel stat's "Jobs Captured" tile."""
+    return _count_matching_in_window("is_opportunity = 1", window)
+
+
+def count_applied_opportunities_in_window(window: StatsWindow) -> int:
+    """Opportunity posts captured within `window` and currently marked applied -- the
+    time-scoped numerator behind the Overview funnel stat's conversion rate. Scoped by
+    when the post was *captured*, not when it was marked applied (status changes carry no
+    timestamp of their own), so a window's conversion rate reflects captures from that
+    window and how many of them have since been applied to."""
+    return _count_matching_in_window("is_opportunity = 1 AND status = 'applied'", window)
 
 
 def platform_counts() -> list[dict[str, Any]]:
