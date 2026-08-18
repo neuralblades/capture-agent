@@ -27,6 +27,12 @@ class CapturedPost(BaseModel):
         "(e.g. a tweet's own timestamp, or a LinkedIn post/job's relative age resolved client-side). "
         "Distinct from captured_at, which is when the user captured it. Null when unknown.",
     )
+    image_url: Optional[str] = Field(
+        None,
+        description="Representative image for the source (tweet media, LinkedIn post image, og:image social "
+        "preview, RSS media thumbnail/enclosure). Null when the source has none -- not every capture has an "
+        "image, and that's expected rather than an error.",
+    )
 
 
 class Deadline(BaseModel):
@@ -169,6 +175,7 @@ class PostRecord(BaseModel):
     action_type: ActionType = "none"
     is_opportunity: bool = False
     posted_at: Optional[str] = None
+    image_url: Optional[str] = None
     match_score: Optional[int] = Field(
         None, ge=0, le=100, description="Resume-to-post match score last computed via /calculate-match"
     )

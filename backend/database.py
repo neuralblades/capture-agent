@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS posts (
     category TEXT NOT NULL DEFAULT 'General',
     is_opportunity INTEGER NOT NULL DEFAULT 0,
     posted_at TEXT,
+    image_url TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -75,6 +76,7 @@ _COLUMN_MIGRATIONS: list[tuple[str, str]] = [
     ("status", "ALTER TABLE posts ADD COLUMN status TEXT"),
     ("notes", "ALTER TABLE posts ADD COLUMN notes TEXT"),
     ("resurface_at", "ALTER TABLE posts ADD COLUMN resurface_at TEXT"),
+    ("image_url", "ALTER TABLE posts ADD COLUMN image_url TEXT"),
 ]
 
 
@@ -104,15 +106,16 @@ def insert_post(
     category: str = "General",
     is_opportunity: bool = False,
     posted_at: Optional[str] = None,
+    image_url: Optional[str] = None,
 ) -> int:
     with get_connection() as conn:
         cursor = conn.execute(
             """
             INSERT INTO posts (
                 platform, author, content, url, captured_at, summary, tags,
-                action_required, deadlines, external_url, contact_email, action_type, category, is_opportunity, posted_at
+                action_required, deadlines, external_url, contact_email, action_type, category, is_opportunity, posted_at, image_url
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 platform,
@@ -130,6 +133,7 @@ def insert_post(
                 category,
                 int(is_opportunity),
                 posted_at,
+                image_url,
             ),
         )
         return cursor.lastrowid
@@ -154,6 +158,7 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "category": row["category"],
         "is_opportunity": bool(row["is_opportunity"]),
         "posted_at": row["posted_at"],
+        "image_url": row["image_url"],
         "status": row["status"],
         "notes": row["notes"],
         "resurface_at": row["resurface_at"],

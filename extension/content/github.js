@@ -52,6 +52,27 @@
     return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
   }
 
+  /**
+   * GitHub generates a dynamic social-preview card (opengraph.githubassets.com)
+   * for every repo and org page and exposes it via the standard og:image meta
+   * tag -- present on effectively every repo/org, so this is a reliable
+   * source for a representative image rather than a heuristic one. Resolved
+   * against location.href since meta[content] (unlike img.src/a.href) is a
+   * plain string the DOM never resolves for you -- GitHub always emits an
+   * absolute URL here in practice, but this keeps the guarantee explicit
+   * rather than assumed.
+   * @returns {string|null}
+   */
+  function getOgImage() {
+    const raw = document.querySelector('meta[property="og:image"]')?.content;
+    if (!raw) return null;
+    try {
+      return new URL(raw, location.href).href;
+    } catch {
+      return null;
+    }
+  }
+
   // ---- Repo root page ----
 
   /**
@@ -149,7 +170,7 @@
   }
 
   /**
-   * @returns {{author: string, text: string, url: string}|null}
+   * @returns {{author: string, text: string, url: string, imageUrl: string|null}|null}
    */
   function buildRepoCapture() {
     const ownerRepo = getOwnerRepo();
@@ -171,6 +192,7 @@
       author: ownerRepo.owner,
       text,
       url: `${location.origin}/${ownerRepo.owner}/${ownerRepo.repo}`,
+      imageUrl: getOgImage(),
     };
   }
 
@@ -244,7 +266,7 @@
   }
 
   /**
-   * @returns {{author: string, text: string, url: string}|null}
+   * @returns {{author: string, text: string, url: string, imageUrl: string|null}|null}
    */
   function buildOrgCapture() {
     const segments = location.pathname.split('/').filter(Boolean);
@@ -260,7 +282,7 @@
     const text = parts.filter(Boolean).join('\n\n');
     if (!text) return null;
 
-    return { author: name || login, text, url: `${location.origin}/${login}` };
+    return { author: name || login, text, url: `${location.origin}/${login}`, imageUrl: getOgImage() };
   }
 
   // ---- Page type ----
@@ -341,7 +363,7 @@
       {
         type: 'CAPTURE_POST',
         platform: 'github',
-        payload: { author: data.author, text: data.text, url: data.url, postedAt: null },
+        payload: { author: data.author, text: data.text, url: data.url, postedAt: null, imageUrl: data.imageUrl ?? null },
         capturedAt: new Date().toISOString(),
       },
       (response) => {

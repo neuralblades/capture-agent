@@ -153,7 +153,28 @@
   }
 
   /**
-   * @returns {{title: string, description: string, author: string|null, bodyText: string, url: string}}
+   * meta[content] is a plain reflected string attribute, not a URL-valued one
+   * -- unlike img.src/a.href/video.poster, it's never resolved against the
+   * page's base URL by the DOM itself. A page that declares a relative
+   * og:image (non-conformant with the OG spec, but seen in the wild, e.g.
+   * content="/img/preview.png") would otherwise persist a path that's
+   * meaningless once rendered from a different origin (the side panel).
+   * Same fix extractTweetIdAndUrl (extract.js) already applies to X's
+   * relative status links.
+   * @param {string|null|undefined} raw
+   * @returns {string|null}
+   */
+  function resolveUrl(raw) {
+    if (!raw) return null;
+    try {
+      return new URL(raw, location.href).href;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * @returns {{title: string, description: string, author: string|null, bodyText: string, url: string, imageUrl: string|null}}
    */
   function extractGenericPage() {
     const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
@@ -166,10 +187,15 @@
 
     const author = document.querySelector('meta[name="author"]')?.content || null;
 
+    // og:image -- the standard "share card" image most sites already declare
+    // -- rather than a heuristic DOM scrape, which would be far less reliable
+    // across arbitrary sites than it is for the hand-verified platforms.
+    const imageUrl = resolveUrl(document.querySelector('meta[property="og:image"]')?.content);
+
     const container = findContentContainer(MIN_SEMANTIC_CONTAINER_CHARS);
     const bodyText = container ? container.innerText.trim().slice(0, MAX_BODY_CHARS) : '';
 
-    return { title, description: description.trim(), author, bodyText, url: location.href };
+    return { title, description: description.trim(), author, bodyText, url: location.href, imageUrl };
   }
 
   /**

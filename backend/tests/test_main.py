@@ -58,6 +58,26 @@ def test_capture_persists_and_returns_extraction(client):
     assert body["status"] is None
     assert body["notes"] is None
     assert body["resurface_at"] is None
+    assert body["image_url"] is None
+
+
+def test_capture_persists_and_returns_image_url(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        resp = client.post(
+            "/capture",
+            json={
+                "platform": "twitter",
+                "content": "Check out this photo",
+                "image_url": "https://pbs.twimg.com/media/abc123.jpg",
+            },
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["image_url"] == "https://pbs.twimg.com/media/abc123.jpg"
+
+    get_resp = client.get(f"/posts/{body['id']}")
+    assert get_resp.json()["image_url"] == "https://pbs.twimg.com/media/abc123.jpg"
 
 
 def test_capture_returns_and_persists_external_url_and_contact_email(client):
