@@ -16,6 +16,9 @@ const ALL_PLATFORM = "All";
 const VIEW_LIST = "list";
 const VIEW_OVERVIEW = "overview";
 
+/** Page size for `GET /posts?limit=&offset=`, both for the initial load and each "Load More". */
+const POSTS_PAGE_SIZE = 50;
+
 /** Sample data used only when no extension runtime is present (e.g. previewing the HTML directly). */
 const SAMPLE_ITEMS = [
   {
@@ -101,12 +104,19 @@ const state = {
   // from scratch on every call and would otherwise forget it was open.
   expandedNotes: new Set(),
   expandedSnooze: new Set(),
+  // Pagination over `GET /posts` (backend/main.py's `list_posts`, ordered newest-first).
+  // `offset` is the backend cursor for the next "Load More" fetch; `hasMore` is inferred
+  // from the last page's length rather than a separate /posts/count round trip.
+  offset: 0,
+  hasMore: false,
+  loadingMore: false,
 };
 
 const els = {
   tabs: document.getElementById("tabs"),
   platformTabs: document.getElementById("platform-tabs"),
   list: document.getElementById("list"),
+  loadMoreBtn: document.getElementById("load-more-btn"),
   emptyState: document.getElementById("empty-state"),
   search: document.getElementById("search-input"),
   toast: document.getElementById("toast"),
@@ -321,14 +331,23 @@ async function refreshMetrics() {
   state.metrics = await getMetrics();
 }
 
+/** Fetches one page of `GET /posts`, newest-first. Returns `[]` on a non-array body. */
+async function fetchPostsPage(offset, limit) {
+  const url = `${BACKEND_POSTS_URL}?limit=${limit}&offset=${offset}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to load posts (${response.status})`);
+  }
+  const posts = await response.json();
+  return Array.isArray(posts) ? posts : [];
+}
+
 async function loadPosts() {
   try {
-    const response = await fetch(BACKEND_POSTS_URL);
-    if (!response.ok) {
-      throw new Error(`Failed to load posts (${response.status})`);
-    }
-    const posts = await response.json();
-    state.items = Array.isArray(posts) ? posts.map(mapPostToItem) : [];
+    const posts = await fetchPostsPage(0, POSTS_PAGE_SIZE);
+    state.items = posts.map(mapPostToItem);
+    state.offset = posts.length;
+    state.hasMore = posts.length === POSTS_PAGE_SIZE;
     render();
     // Fire-and-forget: scores trickle in and each re-render as it resolves,
     // rather than blocking the initial list paint on N LLM calls.
@@ -336,6 +355,56 @@ async function loadPosts() {
   } catch (error) {
     console.error("[CaptureAgent] Failed to load posts", error);
     showToast("Couldn't load captures", true);
+  }
+}
+
+/** "Load More": fetches the next page at `state.offset` and appends it. Items already
+ * present (by id) are dropped rather than duplicated -- a live capture arriving between
+ * pages shifts every backend offset down by one, which would otherwise re-fetch the
+ * previous page's last item. */
+async function loadMorePosts() {
+  if (state.loadingMore || !state.hasMore) return;
+  state.loadingMore = true;
+  renderLoadMoreButton();
+  try {
+    const posts = await fetchPostsPage(state.offset, POSTS_PAGE_SIZE);
+    const newItems = posts.map(mapPostToItem);
+    const existingIds = new Set(state.items.map((item) => item.id));
+    const appended = newItems.filter((item) => !existingIds.has(item.id));
+    state.items = [...state.items, ...appended];
+    state.offset += posts.length;
+    state.hasMore = posts.length === POSTS_PAGE_SIZE;
+    render();
+    calculateMatchScores();
+  } catch (error) {
+    console.error("[CaptureAgent] Failed to load more posts", error);
+    showToast("Couldn't load more captures", true);
+  } finally {
+    state.loadingMore = false;
+    renderLoadMoreButton();
+  }
+}
+
+/** Live-update path for `REFRESH_POSTS` (fired after every new capture). Re-fetches just
+ * the newest page and prepends only the items not already in `state.items`, instead of
+ * replacing the list outright -- otherwise this would discard whatever "Load More" depth
+ * the user has already fetched, and reset their scroll position back to the top. */
+async function refreshTopPosts() {
+  try {
+    const posts = await fetchPostsPage(0, POSTS_PAGE_SIZE);
+    const freshItems = posts.map(mapPostToItem);
+
+    const existingIds = new Set(state.items.map((item) => item.id));
+    const newOnes = freshItems.filter((item) => !existingIds.has(item.id));
+    if (newOnes.length === 0) return;
+
+    state.items = [...newOnes, ...state.items];
+    // The new rows push every later backend offset down by this many places.
+    state.offset += newOnes.length;
+    render();
+    calculateMatchScores();
+  } catch (error) {
+    console.error("[CaptureAgent] Failed to refresh posts", error);
   }
 }
 
@@ -520,6 +589,7 @@ function switchView(view) {
     els.emptyState.hidden = true;
     loadStats();
   }
+  renderLoadMoreButton();
 }
 
 /** Whether an item's resurface_at is set and due (<= now), per issue #66 --
@@ -732,6 +802,16 @@ function buildResurfacedPill(item) {
   pill.className = "resurfaced-pill";
   pill.textContent = "🔔 Resurfaced";
   return pill;
+}
+
+/** Shows/hides and labels the "Load More" control. Visible whenever the list view is
+ * active and the backend has more pages, independent of the current filtered item
+ * count -- appending more posts can surface matches even when the current filter
+ * shows nothing. */
+function renderLoadMoreButton() {
+  els.loadMoreBtn.hidden = state.view !== VIEW_LIST || !state.hasMore;
+  els.loadMoreBtn.disabled = state.loadingMore;
+  els.loadMoreBtn.textContent = state.loadingMore ? "Loading…" : "Load More";
 }
 
 function renderList() {
@@ -1116,10 +1196,13 @@ function render() {
   renderPlatformTabs();
   renderTabs();
   renderList();
+  renderLoadMoreButton();
 }
 
 els.viewTabList.addEventListener("click", () => switchView(VIEW_LIST));
 els.viewTabOverview.addEventListener("click", () => switchView(VIEW_OVERVIEW));
+
+els.loadMoreBtn.addEventListener("click", loadMorePosts);
 
 els.sortMatchBtn.addEventListener("click", () => {
   state.sortByMatch = !state.sortByMatch;
@@ -1140,7 +1223,7 @@ els.search.addEventListener("input", (e) => {
 if (hasExtensionRuntime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === MessageType.REFRESH_POSTS) {
-      refreshMetrics().then(loadPosts);
+      refreshMetrics().then(refreshTopPosts);
       loadCategories();
       loadAppliedCount();
       if (state.view === VIEW_OVERVIEW) loadStats();
@@ -1154,6 +1237,11 @@ if (hasExtensionRuntime && chrome.runtime.onMessage) {
     }
     if (message?.type === MessageType.ITEMS_UPDATED && Array.isArray(message.items)) {
       state.items = message.items;
+      // This is a full replace of unknown backend depth, so pagination state can't be
+      // trusted -- fall back to "no more pages known" rather than risk a stale offset
+      // skipping or duplicating rows on the next "Load More".
+      state.offset = message.items.length;
+      state.hasMore = false;
       render();
     }
   });
@@ -1173,6 +1261,8 @@ async function boot() {
   if (!hasExtensionRuntime) {
     state.items = SAMPLE_ITEMS;
     state.categories = categoriesFromItems(SAMPLE_ITEMS);
+    state.offset = SAMPLE_ITEMS.length;
+    state.hasMore = false;
     render();
     return;
   }
