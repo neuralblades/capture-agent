@@ -177,6 +177,9 @@ def test_init_db_migrates_legacy_table_missing_new_columns(tmp_path, monkeypatch
     assert record["match_score"] is None
     assert record["is_opportunity"] is False
     assert record["posted_at"] is None
+    assert record["status"] is None
+    assert record["notes"] is None
+    assert record["resurface_at"] is None
 
 
 def test_init_db_is_idempotent_on_already_migrated_table(isolated_db):
@@ -217,6 +220,66 @@ def test_posted_at_defaults_to_none(isolated_db):
 def test_posted_at_round_trips(isolated_db):
     post_id = _insert(posted_at="2026-08-10T09:00:00+00:00")
     assert database.get_post(post_id)["posted_at"] == "2026-08-10T09:00:00+00:00"
+
+
+def test_status_notes_resurface_at_default_to_none(isolated_db):
+    post_id = _insert()
+    record = database.get_post(post_id)
+    assert record["status"] is None
+    assert record["notes"] is None
+    assert record["resurface_at"] is None
+
+
+def test_update_post_fields_sets_only_given_fields(isolated_db):
+    post_id = _insert()
+
+    assert database.update_post_fields(post_id, status="applied") is True
+    record = database.get_post(post_id)
+    assert record["status"] == "applied"
+    assert record["notes"] is None
+    assert record["resurface_at"] is None
+
+
+def test_update_post_fields_updates_multiple_fields_at_once(isolated_db):
+    post_id = _insert()
+
+    database.update_post_fields(
+        post_id, status="read", notes="Interesting read", resurface_at="2026-09-01T00:00:00+00:00"
+    )
+    record = database.get_post(post_id)
+    assert record["status"] == "read"
+    assert record["notes"] == "Interesting read"
+    assert record["resurface_at"] == "2026-09-01T00:00:00+00:00"
+
+
+def test_update_post_fields_leaves_unspecified_fields_untouched(isolated_db):
+    post_id = _insert()
+    database.update_post_fields(post_id, status="applied", notes="first note")
+
+    database.update_post_fields(post_id, status="withdrawn")
+
+    record = database.get_post(post_id)
+    assert record["status"] == "withdrawn"
+    assert record["notes"] == "first note"
+
+
+def test_update_post_fields_can_explicitly_clear_a_field(isolated_db):
+    post_id = _insert()
+    database.update_post_fields(post_id, status="applied")
+
+    database.update_post_fields(post_id, status=None)
+
+    assert database.get_post(post_id)["status"] is None
+
+
+def test_update_post_fields_with_no_fields_returns_existence(isolated_db):
+    post_id = _insert()
+    assert database.update_post_fields(post_id) is True
+    assert database.update_post_fields(999999) is False
+
+
+def test_update_post_fields_returns_false_when_missing(isolated_db):
+    assert database.update_post_fields(999999, status="applied") is False
 
 
 def test_category_counts_includes_all_total_and_per_category_counts(isolated_db):

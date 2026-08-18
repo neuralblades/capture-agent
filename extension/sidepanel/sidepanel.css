@@ -464,6 +464,22 @@ body {
   border: 1px solid rgba(255, 107, 107, 0.35);
 }
 
+/* Resurfaced-item pill (resurface_at due) */
+.resurfaced-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid rgba(124, 92, 255, 0.35);
+}
+
 .item-title {
   font-weight: 600;
   color: var(--text);
@@ -546,6 +562,91 @@ body {
 
 .apply-toggle:has(input:checked) {
   color: var(--accent);
+}
+
+/* Free-text status field (non-opportunity items) */
+.status-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-field-label {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.status-input {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11.5px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.status-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.status-input::placeholder {
+  color: var(--text-faint);
+}
+
+/* Notes / Snooze expandable editors */
+.notes-field,
+.snooze-field {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.notes-textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  resize: vertical;
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.notes-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.notes-textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.snooze-input {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11.5px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.snooze-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
 }
 
 .action-btn.primary {

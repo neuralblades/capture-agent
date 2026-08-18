@@ -1,9 +1,12 @@
 /**
  * Local funnel metrics engine, backed by `chrome.storage.local`. Tracks the
  * capture-to-application lifecycle counters from issue #33 --
- * `captures_total`, `forms_opened`, `emails_drafted`, `applications_submitted`
- * -- plus which items have been self-reported as "applied", so the sidepanel
- * can render a conversion funnel without a backend round trip.
+ * `captures_total`, `forms_opened`, `emails_drafted` -- so the sidepanel can
+ * render a conversion funnel without a backend round trip for those.
+ * `applications_submitted` is derived at render time in sidepanel.js from
+ * the backend `status === "applied"` field on loaded posts (see issue #66)
+ * rather than tracked here, so it survives `chrome.storage.local` being
+ * cleared and stays in sync across devices.
  *
  * `captures_total` only counts posts classified as job/application-type
  * opportunities (see `is_opportunity` on the backend PostRecord) -- general
@@ -16,13 +19,14 @@
  */
 
 const METRICS_KEY = "captureAgent.metrics";
-const APPLIED_KEY = "captureAgent.appliedItemIds";
 
 /** @enum {string} */
 export const MetricName = Object.freeze({
   CAPTURES_TOTAL: "captures_total",
   FORMS_OPENED: "forms_opened",
   EMAILS_DRAFTED: "emails_drafted",
+  // Not stored/incremented here -- see file header. Kept as a key name so
+  // conversionRate() and callers share one constant for it.
   APPLICATIONS_SUBMITTED: "applications_submitted",
 });
 
@@ -38,7 +42,6 @@ const hasStorage = typeof chrome !== "undefined" && !!chrome.storage && !!chrome
 // In-memory fallback so this module still behaves outside an extension
 // runtime instead of throwing on every call.
 let memoryMetrics = { ...DEFAULT_METRICS };
-let memoryAppliedIds = [];
 
 function readStorage(key, fallback) {
   if (!hasStorage) return Promise.resolve(fallback);
@@ -60,8 +63,8 @@ function writeStorage(key, value) {
 // naive read-modify-write (get the object, mutate in JS, set it back) isn't
 // atomic: two overlapping increments -- even from different contexts, e.g.
 // the background service worker bumping captures_total while the sidepanel
-// bumps forms_opened/applications_submitted, or just two rapid clicks inside
-// the sidepanel itself -- can interleave their get/set pairs and silently
+// bumps forms_opened/emails_drafted, or just two rapid clicks inside the
+// sidepanel itself -- can interleave their get/set pairs and silently
 // clobber one update. Every read-modify-write in this module runs inside
 // `withMetricsLock` to serialize them.
 //
@@ -106,21 +109,6 @@ async function writeMetricsUnlocked(metrics) {
   }
 }
 
-async function readAppliedUnlocked() {
-  if (!hasStorage) return new Set(memoryAppliedIds);
-  const stored = await readStorage(APPLIED_KEY, []);
-  return new Set(Array.isArray(stored) ? stored : []);
-}
-
-async function writeAppliedUnlocked(appliedIds) {
-  const idsArray = Array.from(appliedIds);
-  if (!hasStorage) {
-    memoryAppliedIds = idsArray;
-  } else {
-    await writeStorage(APPLIED_KEY, idsArray);
-  }
-}
-
 /** @returns {Promise<Record<string, number>>} A point-in-time snapshot; not lock-guarded since a plain read can't corrupt state. */
 export function getMetrics() {
   return readMetricsUnlocked();
@@ -137,44 +125,6 @@ export function incrementMetric(name, by = 1) {
     metrics[name] = (metrics[name] || 0) + by;
     await writeMetricsUnlocked(metrics);
     return metrics;
-  });
-}
-
-/** @returns {Promise<Set<string>>} A point-in-time snapshot; not lock-guarded since a plain read can't corrupt state. */
-export function getAppliedItemIds() {
-  return readAppliedUnlocked();
-}
-
-/**
- * Marks (or unmarks) an item as applied and keeps `applications_submitted`
- * in sync with the transition. Toggling an item that's already in the
- * requested state is a no-op for the counter -- re-rendering the same
- * checked checkbox must not inflate `applications_submitted`. Runs as a
- * single locked read-modify-write across both the applied-id set and the
- * metrics object so concurrent toggles (or a toggle racing an increment
- * from elsewhere) can't drop each other's updates.
- * @param {string} itemId
- * @param {boolean} applied
- * @returns {Promise<{appliedIds: Set<string>, metrics: Record<string, number>}>}
- */
-export function setItemApplied(itemId, applied) {
-  return withMetricsLock(async () => {
-    const appliedIds = await readAppliedUnlocked();
-    const wasApplied = appliedIds.has(itemId);
-
-    if (applied === wasApplied) {
-      return { appliedIds, metrics: await readMetricsUnlocked() };
-    }
-
-    if (applied) appliedIds.add(itemId);
-    else appliedIds.delete(itemId);
-    await writeAppliedUnlocked(appliedIds);
-
-    const metrics = await readMetricsUnlocked();
-    metrics[MetricName.APPLICATIONS_SUBMITTED] = (metrics[MetricName.APPLICATIONS_SUBMITTED] || 0) + (applied ? 1 : -1);
-    await writeMetricsUnlocked(metrics);
-
-    return { appliedIds, metrics };
   });
 }
 

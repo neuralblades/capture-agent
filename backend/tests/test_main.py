@@ -55,6 +55,9 @@ def test_capture_persists_and_returns_extraction(client):
     assert body["match_score"] is None
     assert body["is_opportunity"] is False
     assert body["posted_at"] is None
+    assert body["status"] is None
+    assert body["notes"] is None
+    assert body["resurface_at"] is None
 
 
 def test_capture_returns_and_persists_external_url_and_contact_email(client):
@@ -238,6 +241,66 @@ def test_capture_without_url_does_not_dedupe(client):
 
     assert first.json()["id"] != second.json()["id"]
     assert len(client.get("/posts").json()) == 2
+
+
+def test_update_post_sets_status(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        create_resp = client.post("/capture", json={"platform": "twitter", "content": "content"})
+    post_id = create_resp.json()["id"]
+
+    resp = client.patch(f"/posts/{post_id}", json={"status": "applied"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "applied"
+    assert resp.json()["notes"] is None
+    assert resp.json()["resurface_at"] is None
+
+    assert client.get(f"/posts/{post_id}").json()["status"] == "applied"
+
+
+def test_update_post_accepts_any_subset_of_fields(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        create_resp = client.post("/capture", json={"platform": "twitter", "content": "content"})
+    post_id = create_resp.json()["id"]
+
+    resp = client.patch(
+        f"/posts/{post_id}",
+        json={"notes": "Looks promising", "resurface_at": "2026-09-01T00:00:00+00:00"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["notes"] == "Looks promising"
+    assert body["resurface_at"] == "2026-09-01T00:00:00+00:00"
+    assert body["status"] is None
+
+
+def test_update_post_leaves_omitted_fields_untouched(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        create_resp = client.post("/capture", json={"platform": "twitter", "content": "content"})
+    post_id = create_resp.json()["id"]
+
+    client.patch(f"/posts/{post_id}", json={"status": "applied", "notes": "first note"})
+    resp = client.patch(f"/posts/{post_id}", json={"status": "withdrawn"})
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "withdrawn"
+    assert resp.json()["notes"] == "first note"
+
+
+def test_update_post_can_explicitly_clear_a_field(client):
+    with patch("main.extract_post_data", return_value=FAKE_RESULT):
+        create_resp = client.post("/capture", json={"platform": "twitter", "content": "content"})
+    post_id = create_resp.json()["id"]
+
+    client.patch(f"/posts/{post_id}", json={"status": "applied"})
+    resp = client.patch(f"/posts/{post_id}", json={"status": None})
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] is None
+
+
+def test_update_post_returns_404_for_missing_post(client):
+    resp = client.patch("/posts/999", json={"status": "applied"})
+    assert resp.status_code == 404
 
 
 def test_delete_post_removes_it(client):

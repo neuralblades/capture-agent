@@ -57,7 +57,8 @@ export const MessageType = Object.freeze({
  * @property {string} sourceUrl       Origin URL the item was captured from.
  * @property {string} createdAt       ISO 8601 timestamp.
  * @property {string|null} dueDate    ISO 8601 timestamp, deadlines only.
- * @property {"new"|"done"|"archived"} status
+ * @property {"new"|"done"|"archived"} lifecycleStatus Client-side list-membership state (distinct from the
+ *   free-text backend `status` field below -- this one is never currently set past "new").
  * @property {number} [postId]        Backend post id, present for backend-sourced items.
  * @property {string|null} [contactEmail]  Contact email detected in the post, if any. When
  *   present, the sidepanel renders a "Draft Email" action regardless of item type.
@@ -73,8 +74,14 @@ export const MessageType = Object.freeze({
  *   published, if the platform exposes it -- exact for X (the tweet's own timestamp), approximate for
  *   LinkedIn (resolved client-side from its relative-age text). Null when unknown. Drives the freshness
  *   pill, which (like the match pill) only renders for opportunity items.
- * @property {boolean} [applied] Self-reported "Mark as Applied" state, persisted in `chrome.storage.local`
- *   via `metrics.js` and merged onto the item client-side (not part of the backend PostRecord).
+ * @property {string|null} status Free-text state from the backend PostRecord (e.g. "applied", "read",
+ *   "registered"), settable via PATCH /posts/{id}. Opportunity items use this for the existing
+ *   "Mark as Applied" checkbox (checked when status === "applied"); other items get a plain editable
+ *   status field.
+ * @property {string|null} notes User-written notes from the backend PostRecord, settable via PATCH /posts/{id}.
+ * @property {string|null} resurfaceAt ISO 8601 timestamp from the backend PostRecord's `resurface_at`,
+ *   settable via the "Snooze" action. When present and <= now, the item is sorted to the top of the list
+ *   and flagged with a "Resurfaced" pill.
  */
 
 /**

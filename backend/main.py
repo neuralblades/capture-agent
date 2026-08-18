@@ -37,6 +37,7 @@ from models import (
     MatchResult,
     PlatformCount,
     PostRecord,
+    PostUpdate,
     StatsOverview,
     TrendBucket,
 )
@@ -189,6 +190,20 @@ def get_post(post_id: int) -> PostRecord:
     record = database.get_post(post_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Post not found")
+    return PostRecord(**record)
+
+
+@app.patch("/posts/{post_id}", response_model=PostRecord)
+def update_post(post_id: int, update: PostUpdate) -> PostRecord:
+    if database.get_post(post_id) is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    fields = update.model_dump(exclude_unset=True)
+    if fields.get("resurface_at") is not None:
+        fields["resurface_at"] = fields["resurface_at"].isoformat()
+    database.update_post_fields(post_id, **fields)
+
+    record = database.get_post(post_id)
     return PostRecord(**record)
 
 

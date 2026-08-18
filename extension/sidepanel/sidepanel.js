@@ -1,5 +1,5 @@
 import { ACTIONS_BY_TYPE, ActionType, MessageType, ItemType, ItemStatus } from "./contracts.js";
-import { getMetrics, getAppliedItemIds, incrementMetric, setItemApplied, conversionRate, MetricName } from "./metrics.js";
+import { getMetrics, incrementMetric, conversionRate, MetricName } from "./metrics.js";
 
 const BACKEND_POSTS_URL = "http://localhost:8000/posts";
 const BACKEND_CATEGORIES_URL = "http://localhost:8000/categories";
@@ -25,7 +25,7 @@ const SAMPLE_ITEMS = [
     sourceUrl: "https://x.com/edu_grants/status/1",
     createdAt: new Date().toISOString(),
     dueDate: new Date(Date.now() + 8 * 86400000).toISOString(),
-    status: ItemStatus.NEW,
+    lifecycleStatus: ItemStatus.NEW,
     contactEmail: "grants@edu-example.org",
     applyUrl: "https://docs.google.com/forms/d/e/sample-scholarship-form/viewform",
     links: [{ url: "https://docs.google.com/forms/d/e/sample-scholarship-form/viewform", label: "Google Form" }],
@@ -36,6 +36,9 @@ const SAMPLE_ITEMS = [
     isOpportunity: true,
     postedAt: new Date(Date.now() - 3 * 3600000).toISOString(),
     platform: "twitter",
+    status: null,
+    notes: null,
+    resurfaceAt: null,
   },
   {
     id: "sample-2",
@@ -45,9 +48,13 @@ const SAMPLE_ITEMS = [
     sourceUrl: "https://x.com/ml_daily/status/2",
     createdAt: new Date().toISOString(),
     dueDate: null,
-    status: ItemStatus.NEW,
+    lifecycleStatus: ItemStatus.NEW,
     category: "Books",
     platform: "twitter",
+    status: null,
+    notes: null,
+    // Set in the past to preview the "Resurfaced" pill/sort-to-top behavior.
+    resurfaceAt: new Date(Date.now() - 3600000).toISOString(),
   },
   {
     id: "sample-3",
@@ -57,12 +64,15 @@ const SAMPLE_ITEMS = [
     sourceUrl: "https://x.com/sys_notes/status/3",
     createdAt: new Date().toISOString(),
     dueDate: null,
-    status: ItemStatus.NEW,
+    lifecycleStatus: ItemStatus.NEW,
     matchScore: 42,
     category: "Study Plans",
     isOpportunity: true,
     postedAt: new Date(Date.now() - 20 * 86400000).toISOString(),
     platform: "twitter",
+    status: null,
+    notes: null,
+    resurfaceAt: null,
   },
 ];
 
@@ -78,8 +88,12 @@ const state = {
   sortByMatch: false,
   categories: [{ name: ALL_CATEGORY, count: 0 }],
   metrics: {},
-  appliedIds: new Set(),
   stats: null,
+  // Ids of items with their notes/snooze editors expanded, per-render UI
+  // state kept here (not on the item) since renderList() rebuilds the DOM
+  // from scratch on every call and would otherwise forget it was open.
+  expandedNotes: new Set(),
+  expandedSnooze: new Set(),
 };
 
 const els = {
@@ -280,7 +294,7 @@ function mapPostToItem(post) {
     sourceUrl: post.url || "",
     createdAt: post.created_at,
     dueDate: deadline ? deadline.iso_date : null,
-    status: ItemStatus.NEW,
+    lifecycleStatus: ItemStatus.NEW,
     contactEmail: post.contact_email || null,
     applyUrl,
     links,
@@ -290,21 +304,14 @@ function mapPostToItem(post) {
     category: post.category || "General",
     isOpportunity: !isGithub && post.is_opportunity === true,
     postedAt: typeof post.posted_at === "string" ? post.posted_at : null,
-    applied: false,
+    status: typeof post.status === "string" ? post.status : null,
+    notes: typeof post.notes === "string" ? post.notes : null,
+    resurfaceAt: typeof post.resurface_at === "string" ? post.resurface_at : null,
   };
 }
 
-/** Merges persisted "Mark as Applied" state onto freshly loaded/pushed items, in place. */
-function applyAppliedState(items) {
-  for (const item of items) {
-    item.applied = state.appliedIds.has(item.id);
-  }
-}
-
 async function refreshMetrics() {
-  const [metrics, appliedIds] = await Promise.all([getMetrics(), getAppliedItemIds()]);
-  state.metrics = metrics;
-  state.appliedIds = appliedIds;
+  state.metrics = await getMetrics();
 }
 
 async function loadPosts() {
@@ -314,9 +321,7 @@ async function loadPosts() {
       throw new Error(`Failed to load posts (${response.status})`);
     }
     const posts = await response.json();
-    const items = Array.isArray(posts) ? posts.map(mapPostToItem) : [];
-    applyAppliedState(items);
-    state.items = items;
+    state.items = Array.isArray(posts) ? posts.map(mapPostToItem) : [];
     render();
     // Fire-and-forget: scores trickle in and each re-render as it resolves,
     // rather than blocking the initial list paint on N LLM calls.
@@ -493,22 +498,40 @@ function switchView(view) {
   }
 }
 
+/** Whether an item's resurface_at is set and due (<= now), per issue #66 --
+ * such items sort to the top and get flagged with a "Resurfaced" pill. */
+function isResurfaced(item) {
+  if (!item.resurfaceAt) return false;
+  const at = new Date(item.resurfaceAt);
+  return !Number.isNaN(at.getTime()) && at.getTime() <= Date.now();
+}
+
 function filteredItems() {
   const q = state.query.trim().toLowerCase();
   const items = state.items.filter((item) => {
     if (state.activeTab !== ALL_CATEGORY && item.category !== state.activeTab) return false;
     if (state.activePlatform !== ALL_PLATFORM && item.platform !== state.activePlatform) return false;
-    if (item.status === ItemStatus.ARCHIVED) return false;
+    if (item.lifecycleStatus === ItemStatus.ARCHIVED) return false;
     if (!q) return true;
     return (
       item.title.toLowerCase().includes(q) || item.detail.toLowerCase().includes(q)
     );
   });
 
-  if (state.sortByMatch) {
-    // Unscored items (null) sort after every scored item, regardless of tie-breaking order.
-    items.sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
-  }
+  // Resurfaced items always float to the top, ahead of both the natural
+  // (newest-first) order and the optional match-score sort -- both are
+  // applied only as a tiebreaker within the resurfaced/not-resurfaced
+  // groups. A stable sort (guaranteed since ES2019) preserves each group's
+  // existing relative order when neither tiebreaker applies.
+  items.sort((a, b) => {
+    const resurfacedDiff = Number(isResurfaced(b)) - Number(isResurfaced(a));
+    if (resurfacedDiff !== 0) return resurfacedDiff;
+    if (state.sortByMatch) {
+      // Unscored items (null) sort after every scored item, regardless of tie-breaking order.
+      return (b.matchScore ?? -1) - (a.matchScore ?? -1);
+    }
+    return 0;
+  });
 
   return items;
 }
@@ -677,6 +700,16 @@ function buildFreshnessPill(item) {
   return pill;
 }
 
+/** Flags an item whose resurface_at snooze has come due (see isResurfaced()). Applies to any
+ * item type, unlike the freshness/match pills which are opportunity-only. */
+function buildResurfacedPill(item) {
+  if (!isResurfaced(item)) return null;
+  const pill = document.createElement("span");
+  pill.className = "resurfaced-pill";
+  pill.textContent = "🔔 Resurfaced";
+  return pill;
+}
+
 function renderList() {
   const items = filteredItems();
   els.list.innerHTML = "";
@@ -729,6 +762,9 @@ function renderList() {
 
     head.appendChild(body);
 
+    const resurfacedPill = buildResurfacedPill(item);
+    if (resurfacedPill) head.appendChild(resurfacedPill);
+
     if (item.isOpportunity) {
       const freshnessPill = buildFreshnessPill(item);
       if (freshnessPill) head.appendChild(freshnessPill);
@@ -753,6 +789,26 @@ function renderList() {
       btn.addEventListener("click", () => runAction(item, action, btn));
       actionGroup.appendChild(btn);
     }
+    const notesBtn = document.createElement("button");
+    notesBtn.type = "button";
+    notesBtn.className = "action-btn";
+    notesBtn.textContent = item.notes ? "Edit Note" : "Add Note";
+    notesBtn.addEventListener("click", () => {
+      toggleExpandedSet(state.expandedNotes, item.id);
+      renderList();
+    });
+    actionGroup.appendChild(notesBtn);
+
+    const snoozeBtn = document.createElement("button");
+    snoozeBtn.type = "button";
+    snoozeBtn.className = "action-btn";
+    snoozeBtn.textContent = item.resurfaceAt ? "Snoozed" : "Snooze";
+    snoozeBtn.addEventListener("click", () => {
+      toggleExpandedSet(state.expandedSnooze, item.id);
+      renderList();
+    });
+    actionGroup.appendChild(snoozeBtn);
+
     actions.appendChild(actionGroup);
 
     if (item.isOpportunity) {
@@ -760,7 +816,7 @@ function renderList() {
       applyToggle.className = "apply-toggle";
       const applyCheckbox = document.createElement("input");
       applyCheckbox.type = "checkbox";
-      applyCheckbox.checked = !!item.applied;
+      applyCheckbox.checked = item.status === "applied";
       applyCheckbox.addEventListener("change", () => toggleApplied(item, applyCheckbox));
       const applyText = document.createElement("span");
       applyText.textContent = "Mark as Applied";
@@ -770,6 +826,79 @@ function renderList() {
     }
 
     card.appendChild(actions);
+
+    // Non-opportunity items don't have the binary applied/not-applied
+    // semantics the checkbox above assumes, so they get a plain editable
+    // status field instead -- open-ended like the backend `status` column
+    // itself (not an enum), matching how `category` already works.
+    if (!item.isOpportunity) {
+      const statusField = document.createElement("label");
+      statusField.className = "status-field";
+      const statusLabel = document.createElement("span");
+      statusLabel.className = "status-field-label";
+      statusLabel.textContent = "Status";
+      const statusInput = document.createElement("input");
+      statusInput.type = "text";
+      statusInput.className = "status-input";
+      statusInput.placeholder = "e.g. read, registered";
+      statusInput.value = item.status || "";
+      statusInput.addEventListener("change", () => {
+        updatePost(item, { status: statusInput.value.trim() || null });
+      });
+      statusField.appendChild(statusLabel);
+      statusField.appendChild(statusInput);
+      card.appendChild(statusField);
+    }
+
+    if (state.expandedNotes.has(item.id)) {
+      const notesField = document.createElement("div");
+      notesField.className = "notes-field";
+      const textarea = document.createElement("textarea");
+      textarea.className = "notes-textarea";
+      textarea.placeholder = "Add a note…";
+      textarea.value = item.notes || "";
+      textarea.addEventListener("blur", () => {
+        const value = textarea.value.trim() || null;
+        if (value === item.notes) return;
+        updatePost(item, { notes: value }, "Note saved");
+      });
+      notesField.appendChild(textarea);
+      card.appendChild(notesField);
+    }
+
+    if (state.expandedSnooze.has(item.id)) {
+      const snoozeField = document.createElement("div");
+      snoozeField.className = "snooze-field";
+      const dateInput = document.createElement("input");
+      dateInput.type = "date";
+      dateInput.className = "snooze-input";
+      if (item.resurfaceAt) {
+        const resurfaceDate = new Date(item.resurfaceAt);
+        if (!Number.isNaN(resurfaceDate.getTime())) {
+          dateInput.value = resurfaceDate.toISOString().slice(0, 10);
+        }
+      }
+      dateInput.addEventListener("change", () => {
+        if (!dateInput.value) return;
+        updatePost(
+          item,
+          { resurface_at: new Date(`${dateInput.value}T00:00:00`).toISOString() },
+          "Snoozed"
+        );
+      });
+      snoozeField.appendChild(dateInput);
+
+      if (item.resurfaceAt) {
+        const clearBtn = document.createElement("button");
+        clearBtn.type = "button";
+        clearBtn.className = "action-btn";
+        clearBtn.textContent = "Clear";
+        clearBtn.addEventListener("click", () => updatePost(item, { resurface_at: null }, "Snooze cleared"));
+        snoozeField.appendChild(clearBtn);
+      }
+
+      card.appendChild(snoozeField);
+    }
 
     els.list.appendChild(card);
   }
@@ -789,13 +918,50 @@ function gmailComposeUrl({ to, subject, body }) {
   return `https://mail.google.com/mail/?${params}`;
 }
 
-/** Toggles an item's self-reported "applied" state and syncs the applications_submitted metric. */
+function toggleExpandedSet(set, id) {
+  if (set.has(id)) set.delete(id);
+  else set.add(id);
+}
+
+/** PATCH /posts/{id} with any subset of status/notes/resurface_at.
+ * @param {number} postId
+ * @param {{status?: string|null, notes?: string|null, resurface_at?: string|null}} fields
+ */
+async function patchPost(postId, fields) {
+  const response = await fetch(`${BACKEND_POSTS_URL}/${postId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to update post (${response.status})`);
+  }
+  return response.json();
+}
+
+/** Persists a status/notes/resurface_at change for an item and syncs the returned record back
+ * onto it, then re-renders the list (sort order and pills depend on all three fields). */
+async function updatePost(item, fields, successMessage) {
+  try {
+    const updated = await patchPost(item.postId, fields);
+    item.status = updated.status;
+    item.notes = updated.notes;
+    item.resurfaceAt = updated.resurface_at;
+    renderList();
+    if (successMessage) showToast(successMessage);
+  } catch (error) {
+    console.error("[CaptureAgent] Failed to update post", error);
+    showToast("Couldn't save changes", true);
+  }
+}
+
+/** Toggles an opportunity item's "applied" status, now backend-persisted via PATCH
+ * /posts/{id} (see issue #66) rather than client-side-only chrome.storage.local tracking. */
 async function toggleApplied(item, checkboxEl) {
   checkboxEl.disabled = true;
   try {
-    const { metrics } = await setItemApplied(item.id, checkboxEl.checked);
-    item.applied = checkboxEl.checked;
-    state.metrics = metrics;
+    const updated = await patchPost(item.postId, { status: checkboxEl.checked ? "applied" : null });
+    item.status = updated.status;
     renderStats();
     showToast(checkboxEl.checked ? "Marked as applied" : "Unmarked as applied");
   } catch (error) {
@@ -902,9 +1068,17 @@ function showToast(message, isError) {
   }, 2200);
 }
 
+/** Derived from currently loaded items rather than a persisted counter (see
+ * metrics.js's file header for why), so it survives chrome.storage.local
+ * being cleared and stays in sync with the backend across devices. */
+function countApplied() {
+  return state.items.filter((item) => item.status === "applied").length;
+}
+
 function renderStats() {
-  els.statCaptures.textContent = String(state.metrics[MetricName.CAPTURES_TOTAL] || 0);
-  els.statRate.textContent = `${Math.round(conversionRate(state.metrics))}%`;
+  const metrics = { ...state.metrics, [MetricName.APPLICATIONS_SUBMITTED]: countApplied() };
+  els.statCaptures.textContent = String(metrics[MetricName.CAPTURES_TOTAL] || 0);
+  els.statRate.textContent = `${Math.round(conversionRate(metrics))}%`;
 }
 
 function render() {
@@ -948,7 +1122,6 @@ if (hasExtensionRuntime && chrome.runtime.onMessage) {
       showToast(message.message, !message.ok);
     }
     if (message?.type === MessageType.ITEMS_UPDATED && Array.isArray(message.items)) {
-      applyAppliedState(message.items);
       state.items = message.items;
       render();
     }
@@ -967,9 +1140,7 @@ function categoriesFromItems(items) {
 async function boot() {
   await refreshMetrics();
   if (!hasExtensionRuntime) {
-    const items = SAMPLE_ITEMS;
-    applyAppliedState(items);
-    state.items = items;
+    state.items = SAMPLE_ITEMS;
     state.categories = categoriesFromItems(SAMPLE_ITEMS);
     render();
     return;

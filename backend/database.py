@@ -72,6 +72,9 @@ _COLUMN_MIGRATIONS: list[tuple[str, str]] = [
     ("category", "ALTER TABLE posts ADD COLUMN category TEXT NOT NULL DEFAULT 'General'"),
     ("is_opportunity", "ALTER TABLE posts ADD COLUMN is_opportunity INTEGER NOT NULL DEFAULT 0"),
     ("posted_at", "ALTER TABLE posts ADD COLUMN posted_at TEXT"),
+    ("status", "ALTER TABLE posts ADD COLUMN status TEXT"),
+    ("notes", "ALTER TABLE posts ADD COLUMN notes TEXT"),
+    ("resurface_at", "ALTER TABLE posts ADD COLUMN resurface_at TEXT"),
 ]
 
 
@@ -151,6 +154,9 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "category": row["category"],
         "is_opportunity": bool(row["is_opportunity"]),
         "posted_at": row["posted_at"],
+        "status": row["status"],
+        "notes": row["notes"],
+        "resurface_at": row["resurface_at"],
         "created_at": row["created_at"],
     }
 
@@ -296,6 +302,39 @@ def update_match_score(post_id: int, match_score: int) -> bool:
     with get_connection() as conn:
         cursor = conn.execute(
             "UPDATE posts SET match_score = ? WHERE id = ?", (match_score, post_id)
+        )
+    return cursor.rowcount > 0
+
+
+_UNSET: Any = object()
+
+
+def update_post_fields(
+    post_id: int,
+    *,
+    status: Optional[str] = _UNSET,
+    notes: Optional[str] = _UNSET,
+    resurface_at: Optional[str] = _UNSET,
+) -> bool:
+    """Updates any subset of status/notes/resurface_at on a post. A parameter
+    left at its _UNSET default is left untouched; pass None explicitly to
+    clear that column. Returns True if a row was updated, False if post_id
+    didn't exist."""
+    updates: dict[str, Optional[str]] = {}
+    if status is not _UNSET:
+        updates["status"] = status
+    if notes is not _UNSET:
+        updates["notes"] = notes
+    if resurface_at is not _UNSET:
+        updates["resurface_at"] = resurface_at
+
+    if not updates:
+        return get_post(post_id) is not None
+
+    columns = ", ".join(f"{column} = ?" for column in updates)
+    with get_connection() as conn:
+        cursor = conn.execute(
+            f"UPDATE posts SET {columns} WHERE id = ?", (*updates.values(), post_id)
         )
     return cursor.rowcount > 0
 
