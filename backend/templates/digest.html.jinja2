@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ title }} — {{ date_label }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f6f1e4;
+    --cream-dim: #ece3cd;
+    --ink: #1c1a15;
+    --ink-dim: #5a5648;
+    --ink-faint: #8b8672;
+    --rule: #1c1a15;
+    --accent: #9c2b22;
+  }
+  * { box-sizing: border-box; }
+  @page { size: A4; margin: 16mm 14mm; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--cream-dim);
+    color: var(--ink);
+    font-family: "Lora", Georgia, "Times New Roman", serif;
+  }
+  .page {
+    max-width: 900px;
+    margin: 0 auto 24px;
+    padding: 28px 32px 40px;
+    background: var(--cream);
+    page-break-after: always;
+  }
+  .page:last-child { page-break-after: auto; margin-bottom: 0; }
+
+  .masthead {
+    text-align: center;
+    border-bottom: 4px double var(--rule);
+    padding-bottom: 10px;
+    margin-bottom: 22px;
+  }
+  .masthead h1 {
+    font-family: "Playfair Display", Georgia, serif;
+    font-weight: 900;
+    font-size: 46px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin: 0;
+  }
+  .masthead .meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--ink-dim);
+    margin-top: 8px;
+    border-top: 1px solid var(--rule);
+    padding-top: 6px;
+  }
+
+  .kicker {
+    font-family: "Lora", Georgia, serif;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.4px;
+    color: var(--accent);
+    margin: 0 0 4px;
+  }
+
+  /* Front page: hero item (has an image) */
+  .hero {
+    position: relative;
+    margin-bottom: 26px;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 22px;
+  }
+  .hero:first-of-type h2 { font-size: 40px; }
+  .hero-image-wrap { position: relative; overflow: hidden; background: var(--cream-dim); }
+  .hero-image-wrap img {
+    width: 100%;
+    display: block;
+    max-height: 420px;
+    object-fit: cover;
+  }
+  .hero-image-wrap .caption-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 20px 22px;
+    background: linear-gradient(to top, rgba(10, 9, 6, 0.92), rgba(10, 9, 6, 0));
+  }
+  .hero-image-wrap .caption-overlay .kicker { color: #f0c94a; }
+  .hero-image-wrap .caption-overlay h2 { color: #fdfaf0; margin: 4px 0 8px; }
+  .hero-image-wrap .caption-overlay p { color: #e9e4d6; }
+  .hero h2 {
+    font-family: "Playfair Display", Georgia, serif;
+    font-weight: 800;
+    font-size: 30px;
+    line-height: 1.08;
+    margin: 4px 0 8px;
+  }
+  .hero p.dek {
+    font-size: 15px;
+    color: var(--ink-dim);
+    max-width: 640px;
+    margin: 0 0 6px;
+  }
+  .hero .byline {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--ink-faint);
+  }
+
+  /* Shared text-only entry -- used for image-less front-page items (per
+     issue #73's acceptance criteria: no image_url means the same
+     text-only treatment as an inside-page entry, even on the front page)
+     and every inside-page entry. */
+  .entry {
+    break-inside: avoid;
+    -webkit-column-break-inside: avoid;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--cream-dim);
+  }
+  .entry.entry-front { padding-bottom: 18px; margin-bottom: 20px; border-bottom: 1px solid var(--rule); }
+  .entry h3 {
+    font-family: "Playfair Display", Georgia, serif;
+    font-weight: 700;
+    font-size: 17px;
+    line-height: 1.2;
+    margin: 2px 0 5px;
+  }
+  .entry.entry-front h3 { font-size: 23px; }
+  .entry .dek {
+    font-size: 12.5px;
+    color: var(--ink-dim);
+    margin: 0 0 5px;
+  }
+  .entry .byline {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--ink-faint);
+  }
+
+  .front-grid { display: flex; flex-direction: column; }
+
+  .page-heading {
+    font-family: "Playfair Display", Georgia, serif;
+    font-weight: 700;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--ink-dim);
+    border-bottom: 2px solid var(--rule);
+    padding-bottom: 6px;
+    margin-bottom: 16px;
+  }
+
+  .inside-list {
+    columns: 2;
+    column-gap: 34px;
+  }
+
+  .page-footer {
+    text-align: center;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-top: 22px;
+    padding-top: 10px;
+    border-top: 1px solid var(--cream-dim);
+  }
+
+  .empty-note {
+    text-align: center;
+    color: var(--ink-dim);
+    font-style: italic;
+    padding: 40px 0;
+  }
+</style>
+</head>
+<body>
+{% macro entry(item, front=False) %}
+<article class="entry{{ ' entry-front' if front else '' }}">
+  <p class="kicker">{{ item._kicker }}</p>
+  <h3>{{ item._headline }}</h3>
+  <p class="dek">{{ item._excerpt }}</p>
+  <p class="byline">{{ item._platform_label }}{% if item.author %} · {{ item.author }}{% endif %}{% if item._deadline_text %} · Deadline: {{ item._deadline_text }}{% endif %}</p>
+</article>
+{% endmacro %}
+
+<section class="page front-page">
+  <header class="masthead">
+    <h1>{{ title }}</h1>
+    <div class="meta">
+      <span>Today's Edition</span>
+      <span>{{ date_label }}</span>
+    </div>
+  </header>
+
+  {% if not front_page and not inside_page_chunks %}
+    <p class="empty-note">Nothing captured yet -- your next edition will appear here once you've captured a few posts.</p>
+  {% else %}
+    <div class="front-grid">
+      {% for item in front_page %}
+        {% if item._image_url %}
+          <article class="hero">
+            <div class="hero-image-wrap">
+              <img src="{{ item._image_url }}" alt="">
+              <div class="caption-overlay">
+                <p class="kicker">{{ item._kicker }}</p>
+                <h2>{{ item._headline }}</h2>
+                <p class="dek">{{ item._excerpt }}</p>
+                <p class="byline">{{ item._platform_label }}{% if item.author %} · {{ item.author }}{% endif %}{% if item._deadline_text %} · Deadline: {{ item._deadline_text }}{% endif %}</p>
+              </div>
+            </div>
+          </article>
+        {% else %}
+          {{ entry(item, front=True) }}
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>
+
+{% for chunk in inside_page_chunks %}
+<section class="page inside-page">
+  <p class="page-heading">Inside This Edition</p>
+  <div class="inside-list">
+    {% for item in chunk %}
+      {{ entry(item, front=False) }}
+    {% endfor %}
+  </div>
+  <p class="page-footer">Page {{ loop.index + 1 }}</p>
+</section>
+{% endfor %}
+</body>
+</html>
