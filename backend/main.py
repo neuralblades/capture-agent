@@ -23,6 +23,7 @@ from contact_extractor import find_contact_email
 from email_generator import generate_cold_email
 from llm_processor import calculate_match_score, extract_post_data, generate_form_answer, map_form_fields
 from models import (
+    AppliedCount,
     CalculateMatchRequest,
     CapturedPost,
     CategoryCount,
@@ -37,6 +38,7 @@ from models import (
     MatchResult,
     PlatformCount,
     PostRecord,
+    PostUpdate,
     StatsOverview,
     TrendBucket,
 )
@@ -155,6 +157,11 @@ def get_categories() -> list[CategoryCount]:
     return [CategoryCount(**row) for row in database.category_counts()]
 
 
+@app.get("/stats/applied-count", response_model=AppliedCount)
+def get_applied_count() -> AppliedCount:
+    return AppliedCount(count=database.count_applied_opportunities())
+
+
 @app.get("/stats/overview", response_model=StatsOverview)
 def get_stats_overview(
     days: int = Query(30, ge=1, description="Size of the trailing trend window, in days"),
@@ -189,6 +196,20 @@ def get_post(post_id: int) -> PostRecord:
     record = database.get_post(post_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Post not found")
+    return PostRecord(**record)
+
+
+@app.patch("/posts/{post_id}", response_model=PostRecord)
+def update_post(post_id: int, update: PostUpdate) -> PostRecord:
+    if database.get_post(post_id) is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    fields = update.model_dump(exclude_unset=True)
+    if fields.get("resurface_at") is not None:
+        fields["resurface_at"] = fields["resurface_at"].isoformat()
+    database.update_post_fields(post_id, **fields)
+
+    record = database.get_post(post_id)
     return PostRecord(**record)
 
 

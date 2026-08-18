@@ -172,7 +172,30 @@ class PostRecord(BaseModel):
     match_score: Optional[int] = Field(
         None, ge=0, le=100, description="Resume-to-post match score last computed via /calculate-match"
     )
+    status: Optional[str] = Field(
+        None,
+        description="Free-text state for this item (e.g. 'applied', 'read', 'registered') -- open-ended like "
+        "category, set via PATCH /posts/{id}",
+    )
+    notes: Optional[str] = Field(None, description="User-written notes, set via PATCH /posts/{id}")
+    resurface_at: Optional[str] = Field(
+        None,
+        description="ISO 8601 timestamp set via PATCH /posts/{id}; when present and <= now, the item should be "
+        "surfaced prominently again",
+    )
     created_at: str
+
+
+class PostUpdate(BaseModel):
+    """Partial update for a captured post's generic status/notes/resurface_at fields
+    (PATCH /posts/{id}). A field omitted from the request is left untouched; a field
+    explicitly set to null clears it."""
+
+    status: Optional[str] = Field(None, description="Free-text state, e.g. 'applied', 'read', 'registered'")
+    notes: Optional[str] = Field(None, description="User-written notes")
+    resurface_at: Optional[datetime] = Field(
+        None, description="When set and <= now, the item should be surfaced prominently again"
+    )
 
 
 class CalculateMatchRequest(BaseModel):
@@ -192,6 +215,13 @@ class MatchResult(BaseModel):
     missing_skills: list[str] = Field(
         default_factory=list, description="Skills/requirements mentioned in the post that the resume does not show"
     )
+
+
+class AppliedCount(BaseModel):
+    """Total opportunity posts marked status='applied', across the whole table (not just one
+    page of GET /posts) -- the numerator for the sidepanel's conversion-rate stat."""
+
+    count: int = Field(..., description="Number of posts with is_opportunity=true and status='applied'")
 
 
 class CategoryCount(BaseModel):
